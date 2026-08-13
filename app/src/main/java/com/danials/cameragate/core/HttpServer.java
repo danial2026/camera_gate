@@ -405,7 +405,11 @@ public final class HttpServer {
         if (contentLength >= 0) {
             sb.append("Content-Length: ").append(contentLength).append("\r\n");
         }
-        sb.append("Connection: close\r\n\r\n");
+        if (status != 101) {
+            // everything but the WebSocket upgrade is one-shot
+            sb.append("Connection: close\r\n");
+        }
+        sb.append("\r\n");
         out.write(sb.toString().getBytes(java.nio.charset.Charset.forName("US-ASCII")));
         out.flush();
     }
