@@ -13,7 +13,6 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.Toast;
@@ -42,7 +41,6 @@ public class SettingsActivity extends Activity {
     private Spinner languageSpinner;
     private CheckBox osdCheck;
     private CheckBox faceCheck;
-    private View faceSection;
     private EditText maxFacesInput;
     private EditText scanMsInput;
     private EditText contrastInput;
@@ -90,7 +88,6 @@ public class SettingsActivity extends Activity {
         languageSpinner = (Spinner) findViewById(R.id.spinner_language);
         osdCheck = (CheckBox) findViewById(R.id.check_osd);
         faceCheck = (CheckBox) findViewById(R.id.check_faces);
-        faceSection = findViewById(R.id.face_section);
         maxFacesInput = (EditText) findViewById(R.id.input_maxfaces);
         scanMsInput = (EditText) findViewById(R.id.input_scanms);
         contrastInput = (EditText) findViewById(R.id.input_contrast);
@@ -109,20 +106,6 @@ public class SettingsActivity extends Activity {
         setupFpsSpinner(settings);
         setupLanguageSpinner(settings);
         setupFinenessSpinner(settings);
-
-        // the detection system section only makes sense when the feature
-        // is on; keep it hidden otherwise to keep the old phones snappy
-        faceSection.setVisibility(faceCheck.isChecked() ? View.VISIBLE
-                : View.GONE);
-        faceCheck.setOnCheckedChangeListener(
-                new CompoundButton.OnCheckedChangeListener() {
-                    @Override
-                    public void onCheckedChanged(CompoundButton b,
-                                                 boolean checked) {
-                        faceSection.setVisibility(checked ? View.VISIBLE
-                                : View.GONE);
-                    }
-                });
 
         Button save = (Button) findViewById(R.id.btn_save);
         save.setOnClickListener(new View.OnClickListener() {
