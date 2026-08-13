@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -46,7 +45,6 @@ func main() {
 	}
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("read: %v", err)
