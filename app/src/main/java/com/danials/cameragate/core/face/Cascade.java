@@ -47,10 +47,12 @@ public final class Cascade {
     final int featureCount;
     final int[] featBase;            // HAAR: flat featRects offset of feature f
 
-    // per-analysis-image offsets into the integral buffers
-    int[] featOfs;                  // HAAR: 4 offsets x 3 rects per feature
-    int[] lbpOfs;                   // LBP: 16 offsets per feature
-    int ofsStride = -1;
+    // per-analysis-image offsets into the integral buffers: cached per
+    // integral stride, because the same cascade scans several pyramid
+    // layers with different strides in one pass (offsets depend on the
+    // stride, so a single shared array would silently corrupt every
+    // layer except the last one built)
+    private int[][] ofsCache = new int[0][];
 
     Cascade(boolean lbp, boolean stumpBased, int winW, int winH, int ncategories,
             int[] stageFirst, int[] stageTrees, float[] stageThreshold,
@@ -104,15 +106,27 @@ public final class Cascade {
     /**
      * Precomputes integral-buffer offsets for every feature against the
      * given analysis stride so the hot loop is pure pointer arithmetic.
+     * Offsets are cached per stride: a detect pass scans pyramid layers
+     * with different strides, and each layer must use its own layout.
      */
     void prepareOffsets(int stride) {
-        if (ofsStride == stride) {
-            return;
+        offsetsFor(stride);
+    }
+
+    private synchronized int[] offsetsFor(int stride) {
+        if (stride >= ofsCache.length) {
+            int[][] bigger = new int[Math.max(stride + 1, ofsCache.length * 2)][];
+            System.arraycopy(ofsCache, 0, bigger, 0, ofsCache.length);
+            ofsCache = bigger;
         }
-        this.ofsStride = stride;
+        int[] cached = ofsCache[stride];
+        if (cached != null) {
+            return cached;
+        }
         int n = featureCount;
+        int[] ofs;
         if (!lbp) {
-            int[] ofs = new int[n * 12];
+            ofs = new int[n * 12];
             for (int f = 0; f < n; f++) {
                 int base = featBase[f];
                 int cnt = featRectCount[f];
@@ -138,10 +152,8 @@ public final class Cascade {
                     }
                 }
             }
-            this.featOfs = ofs;
-            this.lbpOfs = null;
         } else {
-            int[] ofs = new int[n * 16];
+            ofs = new int[n * 16];
             for (int f = 0; f < n; f++) {
                 // LBPEvaluator::OptFeature::setOffsets - 3x3 block grid
                 int x = featRects[f * 5];
@@ -170,9 +182,9 @@ public final class Cascade {
                 ofs[f0 + 12] = (y + 3 * h) * stride + x;
                 ofs[f0 + 13] = (y + 3 * h) * stride + x + w;
             }
-            this.lbpOfs = ofs;
-            this.featOfs = null;
         }
+        ofsCache[stride] = ofs;
+        return ofs;
     }
 
     /**
@@ -207,7 +219,8 @@ public final class Cascade {
         if ((float) area * inv >= 1e-1f) {
             return -1000; // window too flat (OpenCV's flatness gate)
         }
-        return stumpBased ? runHaarStagesStump(ig, base, inv) : runHaarStages(ig, base, inv);
+        return stumpBased ? runHaarStagesStump(ig, base, inv, offsetsFor(stride))
+                : runHaarStages(ig, base, inv, offsetsFor(stride));
     }
 
     /**
@@ -215,9 +228,9 @@ public final class Cascade {
      * with two leaves; the XML left/right node fields are ignored and the
      * tree's two consecutive leaf values are added directly.
      */
-    private int runHaarStagesStump(IntegralImage ig, int base, float invNorm) {
+    private int runHaarStagesStump(IntegralImage ig, int base, float invNorm,
+                                   int[] ofs) {
         int[] sum = ig.sum;
-        int[] ofs = featOfs;
         float[] leaves = this.leaves;
         int[] nodes = this.nodes;
         float[] thr = stageThreshold;
@@ -261,9 +274,9 @@ public final class Cascade {
         return 1;
     }
 
-    private int runHaarStages(IntegralImage ig, int base, float invNorm) {
+    private int runHaarStages(IntegralImage ig, int base, float invNorm,
+                              int[] ofs) {
         int[] sum = ig.sum;
-        int[] ofs = featOfs;
         int[] featRC = featRectCount;
         int[] rects = featRects;
         float[] leaves = this.leaves;
@@ -330,7 +343,7 @@ public final class Cascade {
         int stride = ig.stride;
         int[] sum = ig.sum;
         int base = wy * stride + wx;
-        int[] ofs = lbpOfs;
+        int[] ofs = offsetsFor(stride);
         float[] leaves = this.leaves;
         int[] nodes = this.nodes;
         int[] subsets = this.subsets;
@@ -396,7 +409,7 @@ public final class Cascade {
         int stride = ig.stride;
         int[] sum = ig.sum;
         int base = wy * stride + wx;
-        int[] ofs = lbpOfs;
+        int[] ofs = offsetsFor(stride);
         float[] leaves = this.leaves;
         int[] nodes = this.nodes;
         int[] subsets = this.subsets;

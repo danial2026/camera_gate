@@ -29,7 +29,7 @@ import java.util.concurrent.ThreadFactory;
  */
 public final class FaceDetector {
 
-    private static final float SCALE_FACTOR = 1.2f;
+    private static final double SCALE_FACTOR = 1.2;
     private static final int MIN_NEIGHBORS = 3;
     private static final double GROUP_EPS = 0.2;
     private static final int MAX_CANDIDATES = 4096;
@@ -92,11 +92,17 @@ public final class FaceDetector {
             for (int wy = yFrom; wy < yTo; wy += step) {
                 for (int wx = 0; wx + cascade.winW <= layerW; wx += step) {
                     cnt++;
-                    if (cascade.run(ig, wx, wy) > 0) {
+                    int res = cascade.run(ig, wx, wy);
+                    if (res > 0) {
                         found.add(new IntRect(
                                 (int) Math.round(wx * factor),
                                 (int) Math.round(wy * factor),
                                 winW, winH));
+                    } else if (res == -1) {
+                        // OpenCV's invoker skips one step after a first-
+                        // stage rejection (result == 0 there): same grid
+                        // coverage for less work
+                        wx += step;
                     }
                 }
             }
@@ -184,7 +190,8 @@ public final class FaceDetector {
             if (buf == null) {
                 lIg[li].refill(gray, w, h);
             } else {
-                downscale(gray, w, h, lLayerW[li], lLayerH[li], buf);
+                downscale(gray, w, h, lLayerW[li], lLayerH[li],
+                        layerFactor[li], buf);
                 lIg[li].refill(buf, lLayerW[li], lLayerH[li]);
             }
             cascade.prepareOffsets(lIg[li].stride);
@@ -393,19 +400,27 @@ public final class FaceDetector {
 
     // ------------------------------------------------- scaling
 
-    /** Bilinear downscale into {@code out} (INTER_LINEAR like OpenCV). */
+    /**
+     * Bilinear downscale into {@code out} (OpenCV's INTER_LINEAR_EXACT:
+     * source coordinate (dst + 0.5) * scale - 0.5, floor + fraction,
+     * nearest-neighbor rounding into a byte).
+     */
     private void downscale(byte[] src, int sw, int sh, int dw, int dh,
-                           byte[] out) {
-        float sx = (float) sw / dw;
-        float sy = (float) sh / dh;
+                           double factor, byte[] out) {
         for (int y = 0; y < dh; y++) {
-            float fy = y * sy;
+            float fy = (float) ((y + 0.5) * factor - 0.5);
+            if (fy < 0) {
+                fy = 0;
+            }
             int fy0 = (int) fy;
             float ky = fy - fy0;
             int r0 = fy0 * sw;
             int r1 = Math.min(fy0 + 1, sh - 1) * sw;
             for (int x = 0; x < dw; x++) {
-                float fx = x * sx;
+                float fx = (float) ((x + 0.5) * factor - 0.5);
+                if (fx < 0) {
+                    fx = 0;
+                }
                 int fx0 = (int) fx;
                 float kx = fx - fx0;
                 int x1 = Math.min(fx0 + 1, sw - 1);
@@ -415,7 +430,7 @@ public final class FaceDetector {
                 int d = src[r1 + x1] & 0xFF;
                 float top = a + (b - a) * kx;
                 float bot = c + (d - c) * kx;
-                out[y * dw + x] = (byte) (top + (bot - top) * ky);
+                out[y * dw + x] = (byte) (int) (top + (bot - top) * ky + 0.5f);
             }
         }
     }
