@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
@@ -279,6 +280,7 @@ public final class HttpServer {
 
         socket.setSoTimeout(1000);
         InputStream in = socket.getInputStream();
+        Log.i(TAG, "ws client connected: " + socket.getRemoteSocketAddress());
 
         long seq = gate.frames().latestSeq();
         long lastWriteAt = 0;
@@ -286,25 +288,11 @@ public final class HttpServer {
             byte[] jpeg = gate.frames().latest();
             long now = System.currentTimeMillis();
             if (jpeg != null && gate.frames().latestSeq() != seq
-                    && jpeg.length < 65536
                     && now - lastWriteAt >= STREAM_MIN_INTERVAL_MS) {
                 seq = gate.frames().latestSeq();
                 lastWriteAt = now;
-                byte[] frame;
-                if (jpeg.length < 126) {
-                    frame = new byte[2 + jpeg.length];
-                    frame[0] = (byte) 0x82; // FIN + binary opcode
-                    frame[1] = (byte) jpeg.length;
-                    System.arraycopy(jpeg, 0, frame, 2, jpeg.length);
-                } else {
-                    frame = new byte[4 + jpeg.length];
-                    frame[0] = (byte) 0x82;
-                    frame[1] = (byte) 126; // 2-byte extended length
-                    frame[2] = (byte) (jpeg.length >> 8);
-                    frame[3] = (byte) jpeg.length;
-                    System.arraycopy(jpeg, 0, frame, 4, jpeg.length);
-                }
-                out.write(frame);
+                Log.i(TAG, "ws send frame size=" + jpeg.length);
+                writeWsFrame(out, jpeg);
                 out.flush();
                 if (System.currentTimeMillis() - lastWriteAt > STREAM_STALL_MS) {
                     Log.w(TAG, "dropping stalled /ws client");
@@ -319,9 +307,31 @@ public final class HttpServer {
                 if ((b & 0x0F) == 0x8) {
                     break; // client close frame
                 }
+            } catch (SocketTimeoutException e) {
+                // polling timeout: keep streaming
             } catch (IOException e) {
                 break;
             }
+        }
+    }
+
+    private static void writeWsFrame(OutputStream out, byte[] payload) throws IOException {
+        out.write(0x82); // FIN + binary opcode
+        int n = payload.length;
+        if (n < 126) {
+            out.write(n);
+            out.write(payload);
+        } else if (n < 65536) {
+            out.write(126);                  // 2-byte extended length
+            out.write(n >> 8);
+            out.write(n);
+            out.write(payload);
+        } else {
+            out.write(127);                  // 8-byte extended length
+            for (int i = 7; i >= 0; i--) {
+                out.write(n >>> (8 * i));
+            }
+            out.write(payload);
         }
     }
 
