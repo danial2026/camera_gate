@@ -13,6 +13,7 @@ import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.SurfaceHolder;
@@ -25,6 +26,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.danials.cameragate.core.CameraGate;
+import com.danials.cameragate.core.JpegFrames;
 import com.danials.cameragate.core.LocaleHelper;
 
 import java.util.List;
@@ -52,7 +54,10 @@ public class MainActivity extends Activity implements CameraGate.Listener {
     private ImageView qrView;
     private LinearLayout connectCard;
     private SurfaceView previewView;
+    private ImageView streamView;
     private TextView previewHint;
+    private Bitmap streamBmp;
+    private long lastStreamAt;
     private Button serverButton;
     private Button recordButton;
 
@@ -77,6 +82,12 @@ public class MainActivity extends Activity implements CameraGate.Listener {
 
         gate = CameraGateApp.gate();
         gate.addListener(this);
+        gate.frames().setListener(new JpegFrames.Listener() {
+            @Override
+            public void onNewFrame() {
+                showStreamFrame();
+            }
+        });
 
         statusView = (TextView) findViewById(R.id.status);
         cameraView = (TextView) findViewById(R.id.camera_value);
@@ -85,6 +96,7 @@ public class MainActivity extends Activity implements CameraGate.Listener {
         qrView = (ImageView) findViewById(R.id.qr);
         connectCard = (LinearLayout) findViewById(R.id.card_connect);
         previewView = (SurfaceView) findViewById(R.id.preview);
+        streamView = (ImageView) findViewById(R.id.stream_view);
         previewHint = (TextView) findViewById(R.id.preview_hint);
         serverButton = (Button) findViewById(R.id.btn_server);
         recordButton = (Button) findViewById(R.id.btn_record);
@@ -337,6 +349,7 @@ public class MainActivity extends Activity implements CameraGate.Listener {
         // ---- preview ----
         boolean showPreview = !running;
         previewView.setVisibility(showPreview ? View.VISIBLE : View.GONE);
+        streamView.setVisibility(running ? View.VISIBLE : View.GONE);
         previewHint.setVisibility(showPreview ? View.GONE : View.VISIBLE);
     }
 
@@ -352,6 +365,47 @@ public class MainActivity extends Activity implements CameraGate.Listener {
                 }
             }
         }
+    }
+
+    /**
+     * Shows the server's live frame in the preview card while it runs
+     * (the camera itself is owned by the server then). One decode per
+     * frame on the main thread is too heavy, so the JPEG is scaled down
+     * to the view width and updates are throttled.
+     */
+    private void showStreamFrame() {
+        if (streamView == null || !resumed || !gate.isRunning()
+                || streamView.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        if (now - lastStreamAt < 150) {
+            return;
+        }
+        lastStreamAt = now;
+        byte[] jpeg = gate.frames().latest();
+        if (jpeg == null) {
+            return;
+        }
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, bounds);
+        int sample = 1;
+        int viewW = streamView.getWidth();
+        while (viewW > 0 && bounds.outWidth / (sample * 2) >= viewW) {
+            sample *= 2;
+        }
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inSampleSize = sample;
+        Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, opts);
+        if (bmp == null) {
+            return;
+        }
+        streamView.setImageBitmap(bmp);
+        if (streamBmp != null) {
+            streamBmp.recycle();
+        }
+        streamBmp = bmp;
     }
 
     // -------------------------------------------------------------- preview

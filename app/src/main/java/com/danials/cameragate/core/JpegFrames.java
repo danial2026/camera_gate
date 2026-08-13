@@ -136,6 +136,9 @@ public final class JpegFrames {
     private long lastDetectAt = -1;
     private long lastDetectLogAt = -1;
     private long detectIntervalMs = DETECT_INTERVAL_MS_DEFAULT;
+    // cost of the last pass: the scan interval grows with it, a slow
+    // level must not stall the stream
+    private volatile long lastPassMs = 0;
     // boxes actually drawn, plus per-orientation results so the freshest
     // pass that found faces wins (orientations alternate per slot)
     private final Rect[] faceBoxes = new Rect[MAX_FACES_HARD];
@@ -149,8 +152,8 @@ public final class JpegFrames {
     private int emptyRuns = 0;
     private int foundRuns = 0;
     private int probeTick = 0;
-    // plain paint: the Haar engine is variance-normalized, so no contrast
-    // pre-processing is applied to the detection draw anymore
+    // plain paint: the Haar engine normalizes contrast per window, so no
+    // pre-processing is applied to the detection draw
     private final Paint detectPaint = new Paint();
     // per-pass timing so we can tune scale/cost from logcat
     private long passCostSum = 0;
@@ -411,9 +414,8 @@ public final class JpegFrames {
      * dies because of the overlay.
      */
     private byte[] overlayOsd(byte[] jpeg) {
-        // Nothing to stamp and no detection tick due: serve the original
-        // JPEG untouched. Decoding + re-encoding every frame is what makes
-        // the stream lag on weak devices when face detection is enabled.
+        // nothing to stamp and detection is not due: keep the original
+        // JPEG, decode+re-encode every frame is what lags the stream
         long now = SystemClock.uptimeMillis();
         boolean detectDue = faceDetectEnabled
                 && now - lastDetectAt >= detectIntervalMs;
@@ -495,8 +497,8 @@ public final class JpegFrames {
         }
 
         if (!osdEnabled && faceCount == 0) {
-            // boxes (if any) were stamped above; nothing drawn means the
-            // frame is identical to the original - skip the re-encode
+            // nothing was drawn, the frame equals the original:
+            // skip the re-encode
             return jpeg;
         }
         try {
@@ -542,8 +544,7 @@ public final class JpegFrames {
         }
         int maxLevel = faceFinestDiv == 1 ? 3
                 : (faceFinestDiv == 2 ? 2 : (faceFinestDiv == 3 ? 1 : 0));
-        // never scan finer than 1/2: full-res passes take seconds on the
-        // low-end devices this app targets and stall the stream
+        // 1/2 is the practical finest level: full-res scans take seconds
         maxLevel = Math.min(2, maxLevel + (faceDeepScan ? 1 : 0));
         int div = escLevel == 0 ? 4 : (escLevel == 1 ? 3
                 : (escLevel == 2 ? 2 : 1));
@@ -558,8 +559,8 @@ public final class JpegFrames {
             boolean fullProbe = faceDeepScan && escLevel == maxLevel
                     && emptyRuns >= 12 && (probeTick++ & 7) == 0;
             if (fullProbe) {
-                // nothing found for a while: occasionally re-acquire at the
-                // finest allowed level to catch smaller faces
+                // long dry spell: re-scan at 1/2 every 8th slot so
+                // smaller faces still get caught
                 dw = Math.max(128, width / 2) & ~1;
                 dh = Math.max(128, height / 2) & ~1;
             }
@@ -589,9 +590,9 @@ public final class JpegFrames {
                 map90.invert(inv90);
             }
             passCostStart = SystemClock.uptimeMillis();
-            // hunt both orientations only when the last slot found nothing
-            // (or every fourth slot as a liveness probe); tracking mode
-            // alternates single passes so an active stream stays smooth
+            // hunt: both rotations only while a face is still missing
+            // (or every 4th slot); tracking alternates to keep the pass
+            // cheap on an active stream
             boolean hunting = faceCount > 0 && faceCount < faceMaxFaces
                     && (emptyRuns > 0 || (slotTick & 3) == 0);
             if ((fine && !fullProbe && !tracking) || hunting) {
@@ -666,6 +667,12 @@ public final class JpegFrames {
                 passCostSum = 0;
                 passCostN = 0;
                 passCostMax = 0;
+            }
+            // pace the next scan: a slow pass on an old phone must not
+            // hold up the stream - boxes just update less often
+            long wantInterval = Math.max(faceScanMs, (lastPassMs + 1) * 2);
+            if (detectIntervalMs != wantInterval) {
+                detectIntervalMs = wantInterval;
             }
         } catch (Exception e) {
             Log.w(TAG, "face detection failed", e);
@@ -756,6 +763,7 @@ public final class JpegFrames {
             return 0;
         }
         long dt = SystemClock.uptimeMillis() - t0;
+        lastPassMs = dt;
         passCostSum += dt;
         passCostN++;
         if (dt > passCostMax) {

@@ -188,6 +188,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <!-- live feed of the running server, shown in place of the camera preview -->
+            <ImageView
+                android:id="@+id/stream_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/sec_preview"
+                android:scaleType="fitCenter"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/preview_hint"
                 android:layout_width="match_parent"
