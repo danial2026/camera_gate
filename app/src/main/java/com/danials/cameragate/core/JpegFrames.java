@@ -164,7 +164,6 @@ public final class JpegFrames {
     private volatile int faceCount = 0;
     private Paint faceBorder;
     private Paint faceCorner;
-    private Paint faceScan;
 
     public JpegFrames(Context context) {
         this.appContext = context != null
@@ -412,6 +411,15 @@ public final class JpegFrames {
      * dies because of the overlay.
      */
     private byte[] overlayOsd(byte[] jpeg) {
+        // Nothing to stamp and no detection tick due: serve the original
+        // JPEG untouched. Decoding + re-encoding every frame is what makes
+        // the stream lag on weak devices when face detection is enabled.
+        long now = SystemClock.uptimeMillis();
+        boolean detectDue = faceDetectEnabled
+                && now - lastDetectAt >= detectIntervalMs;
+        if (!osdEnabled && faceCount == 0 && !detectDue) {
+            return jpeg;
+        }
         // Decode straight into a reused mutable bitmap (inBitmap, API 11+):
         // no per-frame allocation, no copy, one Canvas. Keep the canvas in
         // RGB_565 - the frame has no alpha and 565 is the cheapest encode.
@@ -486,6 +494,11 @@ public final class JpegFrames {
             drawFaceBoxes(c);
         }
 
+        if (!osdEnabled && faceCount == 0) {
+            // boxes (if any) were stamped above; nothing drawn means the
+            // frame is identical to the original - skip the re-encode
+            return jpeg;
+        }
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream(jpeg.length + 1024);
             if (bmp.compress(Bitmap.CompressFormat.JPEG, 75, out)) {
@@ -573,7 +586,12 @@ public final class JpegFrames {
                 map90.postScale(k, k);
                 map90.invert(inv90);
             }
-            passCostStart = SystemClock.uptimeMillis();            boolean hunting = faceCount > 0 && faceCount < faceMaxFaces;
+            passCostStart = SystemClock.uptimeMillis();
+            // hunt both orientations only when the last slot found nothing
+            // (or every fourth slot as a liveness probe); tracking mode
+            // alternates single passes so an active stream stays smooth
+            boolean hunting = faceCount > 0 && faceCount < faceMaxFaces
+                    && (emptyRuns > 0 || (slotTick & 3) == 0);
             if ((fine && !fullProbe && !tracking) || hunting) {
                 // search/hunt mode: both orientations every slot so a face
                 // only the other rotation would catch is not missed while
@@ -762,9 +780,9 @@ public final class JpegFrames {
 
     /**
      * Hacker-movie targeting boxes: faint full border, bright corner
-     * brackets, two sweeping scan lines inside the box and a monospace
-     * "TARGET n" label. All paints are pre-allocated; the only per-frame
-     * allocations are the small label strings.
+     * brackets and a monospace "TARGET n" label. All paints are
+     * pre-allocated; the only per-frame allocations are the small label
+     * strings.
      */
     private void drawFaceBoxes(Canvas c) {
         int n = faceCount;
@@ -772,8 +790,6 @@ public final class JpegFrames {
             return;
         }
         ensureFacePaints();
-        long sweep = SystemClock.uptimeMillis() / 50;
-        long sweep2 = SystemClock.uptimeMillis() / 37;
         for (int i = 0; i < n; i++) {
             Rect r = faceBoxes[i];
             if (r.width() <= 0 || r.height() <= 0) {
@@ -797,12 +813,6 @@ public final class JpegFrames {
             c.drawLine(x1, y2, x1 + cl, y2, faceCorner);
             c.drawLine(x2, y2 - t, x2, y2, faceCorner);
             c.drawLine(x2, y2, x2 - cl, y2, faceCorner);
-
-            int span = Math.max(1, r.height());
-            int sy = y1 + (int) (sweep % span);
-            int sy2 = y1 + (int) ((sweep2 + i * 97) % span);
-            c.drawLine(x1 + 2, sy, x2 - 2, sy, faceScan);
-            c.drawLine(x1 + 2, sy2, x2 - 2, sy2, faceScan);
 
             String label = String.format(Locale.US, "TARGET %02d", i + 1);
             float ts = Math.max(10f, Math.min(20f, r.height() * 0.15f));
@@ -830,11 +840,6 @@ public final class JpegFrames {
             faceCorner.setStyle(Paint.Style.STROKE);
             faceCorner.setStrokeCap(Paint.Cap.ROUND);
             faceCorner.setStrokeWidth(Math.max(2.5f, height / 240f));
-
-            faceScan = new Paint(Paint.ANTI_ALIAS_FLAG);
-            faceScan.setColor(0x6600FF88);
-            faceScan.setStyle(Paint.Style.STROKE);
-            faceScan.setStrokeWidth(1f);
         }
     }
 
