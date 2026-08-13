@@ -7,6 +7,7 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Paint;
@@ -137,6 +138,17 @@ public final class JpegFrames {
     private int escLevel = 0;
     private int emptyRuns = 0;
     private int foundRuns = 0;
+    private int probeTick = 0;
+    // mild contrast boost applied only to the detection draw: the old
+    // Neven engine needs strong edges; this fights glare, washed-out
+    // prints and the JPEG generation loss in the pipeline
+    private final Paint detectPaint = new Paint();
+    private boolean detectPaintReady = false;
+    // per-pass timing so we can tune scale/cost from logcat
+    private long passCostSum = 0;
+    private int passCostN = 0;
+    private long passCostMax = 0;
+    private long passCostStart = 0;
     private final Matrix map0 = new Matrix();
     private final Matrix inv0 = new Matrix();
     private final Matrix map90 = new Matrix();
@@ -512,17 +524,73 @@ public final class JpegFrames {
                 map90.postScale(k, k);
                 map90.invert(inv90);
             }
-            boolean rot = (slotTick++ & 1) != 0;
-            int n = runPass(rot ? detector90 : detector0,
-                    rot ? bmp90 : bmp0, full,
-                    rot ? map90 : map0, rot ? inv90 : inv0,
-                    rot ? boxes90 : boxes0);
-            if (rot) {
-                count90 = n;
-                slot90 = slotTick;
+            boolean tracking = faceCount > 0 && emptyRuns < 3;
+            boolean fine = escLevel >= 2 && emptyRuns < 12;
+            boolean fullProbe = escLevel == 2 && emptyRuns >= 12
+                    && (probeTick++ & 7) == 0;
+            if (fullProbe) {
+                // nothing found for a while: occasionally re-acquire at
+                // full resolution to catch smaller faces
+                dw = Math.max(128, width) & ~1;
+                dh = Math.max(128, height) & ~1;
+            }
+            if (bmp0 == null || dbW != dw || dbH != dh) {
+                if (bmp0 != null) {
+                    bmp0.recycle();
+                    bmp90.recycle();
+                }
+                dbW = dw;
+                dbH = dh;
+                bmp0 = Bitmap.createBitmap(dw, dh, Bitmap.Config.RGB_565);
+                bmp90 = Bitmap.createBitmap(dh, dw, Bitmap.Config.RGB_565);
+                // WARNING: Android's actual framework constructor signature
+                // is FaceDetector(width, height, maxFaces), not the
+                // (maxFaces, width, height) shown in some API docs. All
+                // three params are int, so a swapped call compiles fine but
+                // throws "bitmap size doesn't match initialization" at
+                // runtime (observed on Android 4.3). The face width must
+                // also be even.
+                detector0 = new FaceDetector(dw, dh, MAX_FACES);
+                detector90 = new FaceDetector(dh, dw, MAX_FACES);
+                Log.i(TAG, "detector init: frame=" + width + "x" + height
+                        + " pass0=" + dw + "x" + dh
+                        + " pass90=" + dh + "x" + dw);
+                float k = width > 0 ? (float) dw / width : 1f;
+                map0.setScale(k, k);
+                map0.invert(inv0);
+                // 90-degree CW pixel rotation of a WxH source into an HxW
+                // target: (X, Y) -> (H - 1 - Y, X), then scaled by k.
+                map90.setValues(new float[]{0, -1, height - 1,
+                        1, 0, 0, 0, 0, 1});
+                map90.postScale(k, k);
+                map90.invert(inv90);
+            }
+            ensureDetectPaint();
+            passCostStart = SystemClock.uptimeMillis();
+            if (fine && !fullProbe && !tracking) {
+                // search mode: both orientations every slot, no 50% miss
+                // window while the user holds a photo at unknown rotation.
+                // (when tracking a face we alternate to keep the stream
+                // frames flowing - cached boxes stay on screen regardless)
+                int c0 = runPass(detector0, bmp0, full, map0, inv0, boxes0);
+                int c90 = runPass(detector90, bmp90, full, map90, inv90, boxes90);
+                count0 = c0;
+                count90 = c90;
+                slot0 = ++slotTick;
+                slot90 = ++slotTick;
             } else {
-                count0 = n;
-                slot0 = slotTick;
+                boolean rot = (slotTick++ & 1) != 0;
+                int n = runPass(rot ? detector90 : detector0,
+                        rot ? bmp90 : bmp0, full,
+                        rot ? map90 : map0, rot ? inv90 : inv0,
+                        rot ? boxes90 : boxes0);
+                if (rot) {
+                    count90 = n;
+                    slot90 = slotTick;
+                } else {
+                    count0 = n;
+                    slot0 = slotTick;
+                }
             }
             // draw the freshest orientation that actually found faces
             int shownC0 = (count0 > 0 && slotTick - slot0 <= 3) ? count0 : 0;
@@ -552,9 +620,14 @@ public final class JpegFrames {
             }
             if (now - lastDetectLogAt > 3000) {
                 lastDetectLogAt = now;
+                long avg = passCostN > 0 ? passCostSum / passCostN : 0;
                 Log.i(TAG, "face detect: kept " + count + " (0deg=" + count0
                         + ", 90deg=" + count90 + ") on " + dw + "x" + dh
-                        + " scale=1/" + div);
+                        + " scale=1/" + div + (fullProbe ? " FULL" : "")
+                        + " passAvg=" + avg + "ms max=" + passCostMax + "ms");
+                passCostSum = 0;
+                passCostN = 0;
+                passCostMax = 0;
             }
         } catch (Exception e) {
             Log.w(TAG, "face detection failed", e);
@@ -571,7 +644,8 @@ public final class JpegFrames {
     private int runPass(FaceDetector detector, Bitmap target, Bitmap full,
                         Matrix map, Matrix inv, Rect[] out) {
         Canvas dc = new Canvas(target);
-        dc.drawBitmap(full, map, null);
+        dc.drawBitmap(full, map, detectPaint);
+        long t0 = SystemClock.uptimeMillis();
         int n;
         try {
             n = detector.findFaces(target, detectFaces);
@@ -579,6 +653,12 @@ public final class JpegFrames {
             Log.e(TAG, "findFaces dims: target=" + target.getWidth() + "x"
                     + target.getHeight(), e);
             throw e;
+        }
+        long dt = SystemClock.uptimeMillis() - t0;
+        passCostSum += dt;
+        passCostN++;
+        if (dt > passCostMax) {
+            passCostMax = dt;
         }
         n = Math.min(n, MAX_FACES);
         int count = 0;
@@ -669,6 +749,18 @@ public final class JpegFrames {
             }
             c.drawText(label, lx, ly, osdStroke);
             c.drawText(label, lx, ly, osdFill);
+        }
+    }
+
+    private void ensureDetectPaint() {
+        if (!detectPaintReady) {
+            detectPaint.setColorFilter(new ColorMatrixColorFilter(
+                    new float[]{
+                            1.35f, 0, 0, 0, -25,
+                            0, 1.35f, 0, 0, -25,
+                            0, 0, 1.35f, 0, -25,
+                            0, 0, 0, 1, 0}));
+            detectPaintReady = true;
         }
     }
 
