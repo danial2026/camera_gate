@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+app/build/
+local.properties
+*.jks
+key.properties
+captures/
+*.iml
+.idea/
+
+# Logs
+*.log
+
+# On-device test evidence (scripts/device_test.sh)
+screenshot/
+
+# OS
+.DS_Store
