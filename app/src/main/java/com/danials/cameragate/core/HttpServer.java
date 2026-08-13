@@ -290,10 +290,20 @@ public final class HttpServer {
                     && now - lastWriteAt >= STREAM_MIN_INTERVAL_MS) {
                 seq = gate.frames().latestSeq();
                 lastWriteAt = now;
-                byte[] frame = new byte[2 + jpeg.length];
-                frame[0] = (byte) 0x82; // FIN + binary opcode
-                frame[1] = (byte) jpeg.length;
-                System.arraycopy(jpeg, 0, frame, 2, jpeg.length);
+                byte[] frame;
+                if (jpeg.length < 126) {
+                    frame = new byte[2 + jpeg.length];
+                    frame[0] = (byte) 0x82; // FIN + binary opcode
+                    frame[1] = (byte) jpeg.length;
+                    System.arraycopy(jpeg, 0, frame, 2, jpeg.length);
+                } else {
+                    frame = new byte[4 + jpeg.length];
+                    frame[0] = (byte) 0x82;
+                    frame[1] = (byte) 126; // 2-byte extended length
+                    frame[2] = (byte) (jpeg.length >> 8);
+                    frame[3] = (byte) jpeg.length;
+                    System.arraycopy(jpeg, 0, frame, 4, jpeg.length);
+                }
                 out.write(frame);
                 out.flush();
                 if (System.currentTimeMillis() - lastWriteAt > STREAM_STALL_MS) {
