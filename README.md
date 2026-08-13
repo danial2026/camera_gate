@@ -38,8 +38,8 @@ API, so no modern Android features are required on the device running it.
   variance normalization — with the bundled `haarcascade_frontalface_alt`
   model, zero OS/NDK dependencies) draws hacker-style green targeting boxes
   on the stream; frames are scanned upright and rotated 90° (the legacy
-  stream is never rotated), and scale, scan rate, max faces, contrast and a
-  full-res re-acquire probe are tunable in settings
+  stream is never rotated), and scale, scan rate, max faces,
+  strictness and a full-res re-acquire probe are tunable in settings
 - host-side verification: the cascade engine is plain Java, so
   `scripts/hosttest.sh` compiles it with the desktop JDK and runs 2200+
   assertions against hand-built micro-cascades and an independent translation
@@ -133,10 +133,10 @@ stops delivering preview frames to MediaRecorder, so `/snapshot`,
 | Stream FPS | encoder cap (5/10/15/20/30 FPS); `AUTO` = uncapped |
 | Status overlay | green OSD (timestamp · FPS · battery) drawn on every frame |
 | Face detection | hacker-style green targeting boxes around faces (Haar cascade engine) |
-| Face max | maximum faces per scan (1..8) |
+| Face max | maximum faces per scan (1..32) |
 | Face finest scale | smallest scale probed (1/4 .. full res); smaller = smaller faces = slower |
 | Face scan interval | ms between detection passes (60..2000) |
-| Face contrast | analysis contrast boost (1.0 = off .. 2.0) |
+| Face strictness | minimum overlapping detections per face (1 loose .. 5 strict) |
 | Face deep scan | full-resolution re-acquire probe while nothing is found |
 | Language | UI language: English or فارسی — applies immediately |
 | Camera id | `0` back camera, `1` front camera |

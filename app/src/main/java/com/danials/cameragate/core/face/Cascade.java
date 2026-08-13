@@ -45,6 +45,7 @@ public final class Cascade {
     final int[] featRectCount;
     final boolean[] featTilted;
     final int featureCount;
+    final int[] featBase;            // HAAR: flat featRects offset of feature f
 
     // per-analysis-image offsets into the integral buffers
     int[] featOfs;                  // HAAR: 4 offsets x 3 rects per feature
@@ -72,6 +73,12 @@ public final class Cascade {
         this.featRectCount = featRectCount;
         this.featTilted = featTilted;
         this.featureCount = featRectCount.length;
+        this.featBase = new int[featureCount];
+        int base = 0;
+        for (int f = 0; f < featureCount; f++) {
+            featBase[f] = base;
+            base += featRectCount[f] * 5;
+        }
     }
 
     /** Number of boosting stages. */
@@ -107,7 +114,7 @@ public final class Cascade {
         if (!lbp) {
             int[] ofs = new int[n * 12];
             for (int f = 0; f < n; f++) {
-                int base = f * 5;
+                int base = featBase[f];
                 int cnt = featRectCount[f];
                 boolean tilt = featTilted[f];
                 for (int r = 0; r < cnt; r++) {
@@ -183,7 +190,7 @@ public final class Cascade {
         int base = wy * stride + wx;
         int off0 = stride + 1;                  // (1,1)
         int off1 = stride + 1 + (winW - 2);     // (winW-1, 1)
-        int off2 = 1 + (winH - 2) * stride;     // (1, winH-1)
+        int off2 = 1 + (winH - 1) * stride;     // (1, winH-1)
         int off3 = off1 + (winH - 2) * stride;  // (winW-1, winH-1)
         long valsum = sum[base + off0] - sum[base + off1]
                 - sum[base + off2] + sum[base + off3];
@@ -198,7 +205,7 @@ public final class Cascade {
         }
         double inv = 1.0 / Math.sqrt(nf);
         if (area * inv >= 1e-1) {
-            return -1000; // window too flat
+            return -1000; // window too flat (OpenCV's flatness gate)
         }
         return stumpBased ? runHaarStagesStump(ig, base, inv) : runHaarStages(ig, base, inv);
     }
@@ -222,21 +229,22 @@ public final class Cascade {
             for (int wi = 0; wi < ntrees; wi++, tree++) {
                 int nBase = tree;
                 int fIdx = nodes[nBase * 4 + 2];
+                int fb = featBase[fIdx];
                 int f0 = fIdx * 12;
-                float fv = featRects[fIdx * 5 + 4] * (sum[base + ofs[f0]]
+                float fv = featRects[fb + 4] * (sum[base + ofs[f0]]
                         - sum[base + ofs[f0 + 1]]
                         - sum[base + ofs[f0 + 2]]
                         + sum[base + ofs[f0 + 3]]);
                 int cnt = featRectCount[fIdx];
                 if (cnt > 1) {
                     int f1 = f0 + 4;
-                    fv += featRects[fIdx * 5 + 9] * (sum[base + ofs[f1]]
+                    fv += featRects[fb + 9] * (sum[base + ofs[f1]]
                             - sum[base + ofs[f1 + 1]]
                             - sum[base + ofs[f1 + 2]]
                             + sum[base + ofs[f1 + 3]]);
                     if (cnt > 2) {
                         int f2 = f0 + 8;
-                        fv += featRects[fIdx * 5 + 14] * (sum[base + ofs[f2]]
+                        fv += featRects[fb + 14] * (sum[base + ofs[f2]]
                                 - sum[base + ofs[f2 + 1]]
                                 - sum[base + ofs[f2 + 2]]
                                 + sum[base + ofs[f2 + 3]]);
@@ -277,21 +285,22 @@ public final class Cascade {
                 do {
                     nBase = nodeOfs + idx;
                     int fIdx = nodes[nBase * 4 + 2];
+                    int fb = featBase[fIdx];
                     int f0 = fIdx * 12;
-                    float fv = featRects[fIdx * 5 + 4] * (sum[base + ofs[f0]]
+                    float fv = featRects[fb + 4] * (sum[base + ofs[f0]]
                             - sum[base + ofs[f0 + 1]]
                             - sum[base + ofs[f0 + 2]]
                             + sum[base + ofs[f0 + 3]]);
                     int cnt = featRC[fIdx];
                     if (cnt > 1) {
                         int f1 = f0 + 4;
-                        fv += featRects[fIdx * 5 + 9] * (sum[base + ofs[f1]]
+                        fv += featRects[fb + 9] * (sum[base + ofs[f1]]
                                 - sum[base + ofs[f1 + 1]]
                                 - sum[base + ofs[f1 + 2]]
                                 + sum[base + ofs[f1 + 3]]);
                         if (cnt > 2) {
                             int f2 = f0 + 8;
-                            fv += featRects[fIdx * 5 + 14] * (sum[base + ofs[f2]]
+                            fv += featRects[fb + 14] * (sum[base + ofs[f2]]
                                     - sum[base + ofs[f2 + 1]]
                                     - sum[base + ofs[f2 + 2]]
                                     + sum[base + ofs[f2 + 3]]);

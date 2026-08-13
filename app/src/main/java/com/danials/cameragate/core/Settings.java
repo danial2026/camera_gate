@@ -108,14 +108,14 @@ public final class Settings {
 
     // ------------------------------------------------ face detection system
 
-    /** Maximum faces the scan tries to find at once (1..8). Default 4. */
+    /** Maximum faces the scan tries to find at once (1..32). Default 32. */
     public int getFaceMaxFaces() {
-        int v = prefs().getInt("faceMaxFaces", 4);
-        return v < 1 ? 1 : (v > 8 ? 8 : v);
+        int v = prefs().getInt("faceMaxFaces", 32);
+        return v < 1 ? 1 : (v > 32 ? 32 : v);
     }
 
     public void setFaceMaxFaces(int maxFaces) {
-        int v = maxFaces < 1 ? 1 : (maxFaces > 8 ? 8 : maxFaces);
+        int v = maxFaces < 1 ? 1 : (maxFaces > 32 ? 32 : maxFaces);
         prefs().edit().putInt("faceMaxFaces", v).apply();
     }
 
@@ -145,15 +145,15 @@ public final class Settings {
         prefs().edit().putInt("faceScanMs", v).apply();
     }
 
-    /** Analysis contrast boost (1.0 = off .. 2.0). Default 1.35. */
-    public float getFaceContrast() {
-        float v = prefs().getFloat("faceContrast", 1.35f);
-        return v < 1f ? 1f : (v > 2f ? 2f : v);
+    /** Detection strictness: minimum overlapping box count (1..5). Default 3. */
+    public int getFaceMinNeighbors() {
+        int v = prefs().getInt("faceMinNeighbors", 3);
+        return v < 1 ? 1 : (v > 5 ? 5 : v);
     }
 
-    public void setFaceContrast(float gain) {
-        float v = gain < 1f ? 1f : (gain > 2f ? 2f : gain);
-        prefs().edit().putFloat("faceContrast", v).apply();
+    public void setFaceMinNeighbors(int n) {
+        int v = n < 1 ? 1 : (n > 5 ? 5 : n);
+        prefs().edit().putInt("faceMinNeighbors", v).apply();
     }
 
     /** Full-resolution re-acquire probe while nothing is found. Default on. */
@@ -171,7 +171,7 @@ public final class Settings {
                 .remove("faceMaxFaces")
                 .remove("faceFinestDiv")
                 .remove("faceScanMs")
-                .remove("faceContrast")
+                .remove("faceMinNeighbors")
                 .remove("faceDeepScan")
                 .apply();
     }

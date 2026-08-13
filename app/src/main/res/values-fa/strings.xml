@@ -61,14 +61,14 @@
     <string name="settings_osd">نوار وضعیت روی تصویر (زمان · نرخ فریم · باتری)</string>
     <string name="settings_faces">تشخیص چهره (جعبه‌های هکری)</string>
     <string name="settings_face_section">سیستم تشخیص</string>
-    <string name="face_maxfaces">حداکثر چهره (۱–۸)</string>
+    <string name="face_maxfaces">حداکثر چهره (۱–۳۲)</string>
     <string name="face_fineness">دقت اسکن</string>
     <string name="fineness_14">۱/۴ وضوح (ایمن‌تر، چهره‌های کوچک دیده نمی‌شوند)</string>
     <string name="fineness_13">۱/۳ وضوح</string>
     <string name="fineness_12">۱/۲ وضوح (متوازن)</string>
     <string name="fineness_full">وضوح کامل (کندترین، کوچک‌ترین چهره‌ها)</string>
     <string name="face_scanms">فاصله اسکن (میلی‌ثانیه، ۶۰–۲۰۰۰)</string>
-    <string name="face_contrast">افزایش کنتراست (۱.۰ = خاموش – ۲.۰)</string>
+    <string name="face_neighbors">میزان سخت‌گیری تشخیص (۱ = شل – ۵ = سخت‌گیر)</string>
     <string name="face_deep">اسکن عمیق (بررسی مجدد با وضوح کامل)</string>
     <string name="face_reset">بازنشانی پیش‌فرض‌ها</string>
     <string name="face_reset_title">بازنشانی تنظیمات تشخیص؟</string>

@@ -77,7 +77,8 @@ public final class CameraGate {
             frames.setFaceDetection(settings.getFaceDetectEnabled());
             frames.applyFaceSettings(settings.getFaceMaxFaces(),
                     settings.getFaceFinestDiv(), settings.getFaceScanMs(),
-                    settings.getFaceContrast(), settings.getFaceDeepScan());
+                    settings.getFaceMinNeighbors(),
+                    settings.getFaceDeepScan());
             frames.setMaxFps(settings.getFps());
             List<String> ips = ipAddresses();
             frames.setOsdLabel(ips.isEmpty() ? null
@@ -371,7 +372,8 @@ public final class CameraGate {
             .append("\"maxFaces\":").append(settings.getFaceMaxFaces()).append(',')
             .append("\"finestDiv\":").append(settings.getFaceFinestDiv()).append(',')
             .append("\"scanMs\":").append(settings.getFaceScanMs()).append(',')
-            .append("\"contrast\":").append(settings.getFaceContrast()).append(',')
+            .append("\"minNeighbors\":")
+            .append(settings.getFaceMinNeighbors()).append(',')
             .append("\"deepScan\":").append(settings.getFaceDeepScan())
           .append("},")
           .append("\"record\":{")

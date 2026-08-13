@@ -205,16 +205,16 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:text="@string/face_contrast" />
+                android:text="@string/face_neighbors" />
 
             <EditText
-                android:id="@+id/input_contrast"
+                android:id="@+id/input_neighbors"
                 style="@style/BodySecondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 android:background="@drawable/input_bg"
-                android:inputType="numberDecimal"
+                android:inputType="number"
                 android:padding="16dp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_hint" />

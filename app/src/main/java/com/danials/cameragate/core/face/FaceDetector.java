@@ -47,6 +47,17 @@ public final class FaceDetector {
     /**
      * Detects faces in a grayscale image. Appends up to {@code maxFaces}
      * boxes to {@code out} (cleared first); returns the count. Detections
+     * are full-res scan coordinates in {@code gray} pixel space. Uses the
+     * default grouping strictness of {@code MIN_NEIGHBORS}.
+     */
+    public int detect(byte[] gray, int w, int h, int maxFaces,
+                      List<IntRect> out) {
+        return detect(gray, w, h, maxFaces, MIN_NEIGHBORS, out);
+    }
+
+    /**
+     * Detects faces in a grayscale image. Appends up to {@code maxFaces}
+     * boxes to {@code out} (cleared first); returns the count. Detections
      * are full-res scan coordinates in {@code gray} pixel space.
      *
      * <p>The scale loop mirrors OpenCV's detectMultiScaleNoGrouping: the
@@ -57,7 +68,7 @@ public final class FaceDetector {
      * exactly like the modern OpenCV pipeline.
      */
     public int detect(byte[] gray, int w, int h, int maxFaces,
-                      List<IntRect> out) {
+                      int minNeighbors, List<IntRect> out) {
         out.clear();
         if (maxFaces <= 0 || !supports(w, h)) {
             return 0;
@@ -91,7 +102,7 @@ public final class FaceDetector {
             }
             factor *= SCALE_FACTOR;
         }
-        group(candidates, maxFaces, out);
+        group(candidates, maxFaces, minNeighbors, out);
         return out.size();
     }
 
@@ -100,11 +111,12 @@ public final class FaceDetector {
     /**
      * Weighted-mean grouping of overlapping boxes (OpenCV's classic
      * groupRectangles): a candidate survives when at least
-     * {@code MIN_NEIGHBORS - 1} boxes overlap it by more than eps of the
+     * {@code minNeighbors - 1} boxes overlap it by more than eps of the
      * smaller area; the merged box is the overlap-weighted mean of its
      * group. Surplus boxes are dropped by area (largest first).
      */
-    private void group(List<IntRect> cands, int maxFaces, List<IntRect> out) {
+    private void group(List<IntRect> cands, int maxFaces, int minNeighbors,
+                       List<IntRect> out) {
         int n = cands.size();
         if (n == 0) {
             return;
@@ -126,7 +138,7 @@ public final class FaceDetector {
                     count++;
                 }
             }
-            if (count >= MIN_NEIGHBORS) {
+            if (count >= minNeighbors) {
                 IntRect m = new IntRect((int) (sumX / count),
                         (int) (sumY / count), (int) (sumW / count),
                         (int) (sumH / count));

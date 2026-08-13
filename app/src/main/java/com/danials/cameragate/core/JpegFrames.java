@@ -7,7 +7,6 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.ColorMatrixColorFilter;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Paint;
@@ -114,15 +113,15 @@ public final class JpegFrames {
     // which the stream never rotates, so a person can appear sideways to
     // the detector: we scan the frame as-is and rotated 90 degrees - search
     // mode does both per slot, tracking mode alternates to keep fps. Scale,
-    // rate, max faces, contrast and the full-res probe are user-tunable in
-    // Settings.
-    private static final int MAX_FACES_HARD = 8;
+    // rate, max faces, strictness and the full-res probe are user-tunable
+    // in Settings.
+    private static final int MAX_FACES_HARD = 32;
     private static final long DETECT_INTERVAL_MS_DEFAULT = 120;
     private volatile boolean faceDetectEnabled = false;
     private volatile int faceMaxFaces = 4;
     private volatile int faceFinestDiv = 2;
     private volatile long faceScanMs = DETECT_INTERVAL_MS_DEFAULT;
-    private volatile float faceContrast = 1.35f;
+    private volatile int faceMinNeighbors = 3;
     private volatile boolean faceDeepScan = true;
     private FaceDetector faceEngine;
     private boolean engineFailed = false;
@@ -150,11 +149,9 @@ public final class JpegFrames {
     private int emptyRuns = 0;
     private int foundRuns = 0;
     private int probeTick = 0;
-    // mild contrast boost applied only to the detection draw: the old
-    // Neven engine needs strong edges; this fights glare, washed-out
-    // prints and the JPEG generation loss in the pipeline
+    // plain paint: the Haar engine is variance-normalized, so no contrast
+    // pre-processing is applied to the detection draw anymore
     private final Paint detectPaint = new Paint();
-    private float paintContrast = -1f;
     // per-pass timing so we can tune scale/cost from logcat
     private long passCostSum = 0;
     private int passCostN = 0;
@@ -205,17 +202,18 @@ public final class JpegFrames {
 
     /**
      * Applies the tunable detection parameters from Settings (clamped):
-     * max faces, finest scan divisor (4..1), scan throttle ms, contrast
-     * gain (1.0 = off) and the full-res deep-scan probe.
+     * max faces, finest scan divisor (4..1), scan throttle ms, grouping
+     * strictness and the full-res probe.
      */
     public void applyFaceSettings(int maxFaces, int finestDiv,
-                                  int scanMs, float contrast,
+                                  int scanMs, int minNeighbors,
                                   boolean deepScan) {
         faceMaxFaces = maxFaces < 1 ? 1 : (maxFaces > MAX_FACES_HARD
                 ? MAX_FACES_HARD : maxFaces);
         faceFinestDiv = finestDiv < 1 ? 1 : (finestDiv > 4 ? 4 : finestDiv);
         faceScanMs = scanMs < 60 ? 60 : (scanMs > 2000 ? 2000 : scanMs);
-        faceContrast = contrast < 1f ? 1f : (contrast > 2f ? 2f : contrast);
+        faceMinNeighbors = minNeighbors < 1 ? 1
+                : (minNeighbors > 5 ? 5 : minNeighbors);
         faceDeepScan = deepScan;
         if (faceCount > faceMaxFaces) {
             faceCount = faceMaxFaces;
@@ -575,9 +573,7 @@ public final class JpegFrames {
                 map90.postScale(k, k);
                 map90.invert(inv90);
             }
-            ensureDetectPaint();
-            passCostStart = SystemClock.uptimeMillis();
-            boolean hunting = faceCount > 0 && faceCount < faceMaxFaces;
+            passCostStart = SystemClock.uptimeMillis();            boolean hunting = faceCount > 0 && faceCount < faceMaxFaces;
             if ((fine && !fullProbe && !tracking) || hunting) {
                 // search/hunt mode: both orientations every slot so a face
                 // only the other rotation would catch is not missed while
@@ -733,7 +729,8 @@ public final class JpegFrames {
         long t0 = SystemClock.uptimeMillis();
         int n;
         try {
-            n = faceEngine.detect(gray, dw, dh, faceMaxFaces, engineBoxes);
+            n = faceEngine.detect(gray, dw, dh, faceMaxFaces,
+                    faceMinNeighbors, engineBoxes);
         } catch (Exception e) {
             Log.e(TAG, "engine pass failed", e);
             return 0;
@@ -818,20 +815,6 @@ public final class JpegFrames {
             }
             c.drawText(label, lx, ly, osdStroke);
             c.drawText(label, lx, ly, osdFill);
-        }
-    }
-
-    private void ensureDetectPaint() {
-        if (paintContrast != faceContrast) {
-            float g = faceContrast;
-            float o = (1f - g) * 255f / 2f * 2f / g; // keep mid-brightness
-            detectPaint.setColorFilter(new ColorMatrixColorFilter(
-                    new float[]{
-                            g, 0, 0, 0, o,
-                            0, g, 0, 0, o,
-                            0, 0, g, 0, o,
-                            0, 0, 0, 1, 0}));
-            paintContrast = faceContrast;
         }
     }
 

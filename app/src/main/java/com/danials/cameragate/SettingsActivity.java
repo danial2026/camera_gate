@@ -43,7 +43,7 @@ public class SettingsActivity extends Activity {
     private CheckBox faceCheck;
     private EditText maxFacesInput;
     private EditText scanMsInput;
-    private EditText contrastInput;
+    private EditText neighborsInput;
     private Spinner finenessSpinner;
     private CheckBox deepCheck;
 
@@ -89,9 +89,17 @@ public class SettingsActivity extends Activity {
         languageSpinner = (Spinner) findViewById(R.id.spinner_language);
         osdCheck = (CheckBox) findViewById(R.id.check_osd);
         faceCheck = (CheckBox) findViewById(R.id.check_faces);
+        final View faceSection = findViewById(R.id.face_section);
+        faceSection.setVisibility(settings.getFaceDetectEnabled() ? View.VISIBLE : View.GONE);
+        faceCheck.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(android.widget.CompoundButton buttonView, boolean isChecked) {
+                faceSection.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            }
+        });
         maxFacesInput = (EditText) findViewById(R.id.input_maxfaces);
         scanMsInput = (EditText) findViewById(R.id.input_scanms);
-        contrastInput = (EditText) findViewById(R.id.input_contrast);
+        neighborsInput = (EditText) findViewById(R.id.input_neighbors);
         finenessSpinner = (Spinner) findViewById(R.id.spinner_fineness);
         deepCheck = (CheckBox) findViewById(R.id.check_deep);
 
@@ -167,7 +175,7 @@ public class SettingsActivity extends Activity {
     private void populateFaceControls(Settings settings) {
         maxFacesInput.setText(String.valueOf(settings.getFaceMaxFaces()));
         scanMsInput.setText(String.valueOf(settings.getFaceScanMs()));
-        contrastInput.setText(String.valueOf(settings.getFaceContrast()));
+        neighborsInput.setText(String.valueOf(settings.getFaceMinNeighbors()));
         deepCheck.setChecked(settings.getFaceDeepScan());
     }
 
@@ -393,8 +401,8 @@ public class SettingsActivity extends Activity {
                     maxFacesInput.getText().toString().trim()));
             settings.setFaceScanMs(Integer.parseInt(
                     scanMsInput.getText().toString().trim()));
-            settings.setFaceContrast(Float.parseFloat(
-                    contrastInput.getText().toString().trim()));
+            settings.setFaceMinNeighbors(Integer.parseInt(
+                    neighborsInput.getText().toString().trim()));
             settings.setFaceDeepScan(deepCheck.isChecked());
 
             if (gate.isRunning()) {
