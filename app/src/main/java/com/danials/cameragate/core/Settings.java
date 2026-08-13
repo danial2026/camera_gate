@@ -136,7 +136,7 @@ public final class Settings {
 
     /** Detection throttle in ms between scans (60..2000). Default 120. */
     public int getFaceScanMs() {
-        int v = prefs().getInt("faceScanMs", 120);
+        int v = prefs().getInt("faceScanMs", 250);
         return v < 60 ? 60 : (v > 2000 ? 2000 : v);
     }
 

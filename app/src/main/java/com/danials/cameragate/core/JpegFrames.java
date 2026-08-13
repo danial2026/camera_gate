@@ -116,7 +116,7 @@ public final class JpegFrames {
     // rate, max faces, strictness and the full-res probe are user-tunable
     // in Settings.
     private static final int MAX_FACES_HARD = 32;
-    private static final long DETECT_INTERVAL_MS_DEFAULT = 120;
+    private static final long DETECT_INTERVAL_MS_DEFAULT = 250;
     private volatile boolean faceDetectEnabled = false;
     private volatile int faceMaxFaces = 4;
     private volatile int faceFinestDiv = 2;
@@ -542,7 +542,9 @@ public final class JpegFrames {
         }
         int maxLevel = faceFinestDiv == 1 ? 3
                 : (faceFinestDiv == 2 ? 2 : (faceFinestDiv == 3 ? 1 : 0));
-        maxLevel = Math.min(3, maxLevel + (faceDeepScan ? 1 : 0));
+        // never scan finer than 1/2: full-res passes take seconds on the
+        // low-end devices this app targets and stall the stream
+        maxLevel = Math.min(2, maxLevel + (faceDeepScan ? 1 : 0));
         int div = escLevel == 0 ? 4 : (escLevel == 1 ? 3
                 : (escLevel == 2 ? 2 : 1));
         int dw = Math.max(96, width / div) & ~1;
@@ -556,10 +558,10 @@ public final class JpegFrames {
             boolean fullProbe = faceDeepScan && escLevel == maxLevel
                     && emptyRuns >= 12 && (probeTick++ & 7) == 0;
             if (fullProbe) {
-                // nothing found for a while: occasionally re-acquire at
-                // full resolution to catch smaller faces
-                dw = Math.max(128, width) & ~1;
-                dh = Math.max(128, height) & ~1;
+                // nothing found for a while: occasionally re-acquire at the
+                // finest allowed level to catch smaller faces
+                dw = Math.max(128, width / 2) & ~1;
+                dh = Math.max(128, height / 2) & ~1;
             }
             if (bmp0 == null || dbW != dw || dbH != dh) {
                 if (bmp0 != null) {

@@ -63,9 +63,10 @@ public final class FaceDetector {
      * <p>The scale loop mirrors OpenCV's detectMultiScaleNoGrouping: the
      * factor starts at 1 and multiplies by {@link #SCALE_FACTOR} while the
      * reported window (20 * factor) still fits the frame; each layer is the
-     * frame downscaled by 1/factor, the analysis window stays 20x20 and the
-     * image is scanned in 2px steps (1px once the factor passes 2), both
-     * exactly like the modern OpenCV pipeline.
+     * frame downscaled by 1/factor and the analysis window stays 20x20,
+     * scanned in 2px steps (a deliberate decimation on top of OpenCV's
+     * 1px-at-large-scales: it costs negligible sensitivity for a fraction
+     * of the CPU on low-end devices).
      */
     public int detect(byte[] gray, int w, int h, int maxFaces,
                       int minNeighbors, List<IntRect> out) {
@@ -89,7 +90,7 @@ public final class FaceDetector {
             IntegralImage ig = IntegralImage.compute(layer, layerW, layerH,
                     !cascade.lbp, false);
             cascade.prepareOffsets(ig.stride);
-            int step = factor >= 2 ? 1 : 2;
+            int step = 2;
             for (int wy = 0; wy + cascade.winH <= layerH; wy += step) {
                 for (int wx = 0; wx + cascade.winW <= layerW; wx += step) {
                     if (cascade.run(ig, wx, wy) > 0) {
