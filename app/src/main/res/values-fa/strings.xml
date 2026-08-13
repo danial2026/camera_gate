@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CameraGate</string>
+    <string name="app_title">CameraGate</string>
+    <string name="app_subtitle">سرور دوربین میزبان‌خودی روی شبکهٔ محلی</string>
+
+    <string name="sec_server">سرور</string>
+    <string name="sec_camera">دوربین</string>
+    <string name="sec_record">ضبط</string>
+    <string name="sec_addresses">آدرس‌های شبکهٔ محلی</string>
+    <string name="exit_title">خروج؟</string>
+    <string name="exit_running_msg">سرور در حال اجراست. آن را متوقف و خارج شویم؟</string>
+    <string name="exit_idle_msg">از CameraGate خارج شویم؟</string>
+    <string name="btn_exit">خروج</string>
+    <string name="btn_cancel">انصراف</string>
+    <string name="sec_connect">اتصال</string>
+    <string name="sec_preview">پیش‌نمایش</string>
+    <string name="sec_about">درباره</string>
+    <string name="btn_website">وب‌سایت توسعه‌دهنده</string>
+    <string name="btn_source">کد منبع</string>
+
+    <string name="lbl_status">وضعیت</string>
+    <string name="lbl_camera">شناسه دوربین</string>
+
+    <string name="status_running">سرور فعال است — این آدرس را روی کامپیوتر باز کنید:\n%1$s</string>
+    <string name="status_stopped">سرور متوقف است. برای استریم دوربین روی شبکهٔ محلی آن را روشن کنید.</string>
+    <string name="camera_closed">بسته</string>
+    <string name="recording_on">در حال ضبط · %1$s</string>
+    <string name="recording_off">بدون ضبط</string>
+    <string name="no_address">آدرس شبکهٔ محلی یافت نشد</string>
+
+    <string name="start_server">شروع سرور</string>
+    <string name="stop_server">توقف سرور</string>
+    <string name="start_recording">شروع ضبط</string>
+    <string name="stop_recording">توقف ضبط</string>
+    <string name="settings">تنظیمات</string>
+    <string name="refresh">بروزرسانی</string>
+
+    <string name="server_start_failed">سرور شروع نشد. پورت را بررسی کنید.</string>
+    <string name="record_start_failed">ضبط شروع نشد.</string>
+    <string name="record_need_server">برای ضبط ابتدا سرور را روشن کنید.</string>
+    <string name="record_started">ضبط در %1$s</string>
+    <string name="record_stopped_nothing">چیزی ضبط نشد.</string>
+    <string name="record_saved">ذخیره شد در %1$s</string>
+
+    <string name="preview_hint">دوربین در حال استریم روی شبکهٔ محلی است…\n(از هر مرورگری آدرس http://&lt;آی‌پی گوشی&gt;:پورت/ را باز کنید)</string>
+
+    <string name="service_notification_title">سرور دوربین CameraGate فعال است</string>
+    <string name="service_notification_text">استریم دوربین روی شبکهٔ محلی — لمس کنید</string>
+    <string name="service_channel_name">سرویس CameraGate</string>
+    <string name="service_channel_description">در حالت قفل بودن گوشی سرور را فعال نگه می‌دارد</string>
+
+    <string name="settings_title">تنظیمات سرور</string>
+    <string name="settings_port">پورت (1–65535)</string>
+    <string name="settings_token">توکن احراز هویت (خالی = بدون احراز)</string>
+    <string name="settings_camera">شناسه دوربین (0 = عقب، 1 = جلو)</string>
+    <string name="settings_address">آدرس شنود</string>
+    <string name="settings_size">اندازهٔ استریم</string>
+    <string name="settings_fps">نرخ فریم استریم</string>
+    <string name="fps_auto">خودکار (بدون محدودیت)</string>
+    <string name="settings_osd">نوار وضعیت روی تصویر (زمان · نرخ فریم · باتری)</string>
+    <string name="addr_all">0.0.0.0 — همهٔ رابط‌ها</string>
+    <string name="addr_local">127.0.0.1 — فقط محلی</string>
+    <string name="size_auto">خودکار (بزرگ‌ترین)</string>
+    <string name="hint_port">پورت</string>
+    <string name="hint_token">توکن احراز هویت</string>
+    <string name="hint_camera">شناسه دوربین</string>
+    <string name="settings_language">زبان</string>
+    <string name="lang_en">English</string>
+    <string name="lang_fa">فارسی</string>
+    <string name="qr_content_desc">کیوآرکد آدرس سرور</string>
+    <string name="save">ذخیره</string>
+    <string name="settings_invalid">مقادیر نامعتبر.</string>
+    <string name="settings_restart_needed">تغییرات پس از راه‌اندازی مجدد سرور اعمال می‌شود.</string>
+</resources>

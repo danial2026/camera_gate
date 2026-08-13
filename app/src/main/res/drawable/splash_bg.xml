@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Splash: pure black + centered white mark.
+
+  gravity is put on the inner <bitmap> (not the <item>) because some 4.x
+  framework renderers stretch layer items to the window bounds when only the
+  layer gravity is set - the bitmap gravity is honored everywhere.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/background" />
+    <item>
+        <bitmap
+            android:src="@mipmap/ic_splash"
+            android:gravity="center" />
+    </item>
+</layer-list>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ ignores windowBackground for the splash; keep it on-theme. -->
+<resources>
+    <style name="LaunchTheme" parent="android:Theme.Black.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+</resources>

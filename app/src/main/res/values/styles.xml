@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="android:Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+    </style>
+
+    <style name="NormalTheme" parent="android:Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+
+    <!-- App title: 20sp / 900 / uppercase (guide) -->
+    <style name="AppTitle">
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <!-- Status label: 10sp / 600 / uppercase (guide) -->
+    <style name="StatusLabel">
+        <item name="android:textSize">10sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Section header: 12sp / 900 / uppercase (guide) -->
+    <style name="SectionHeader">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Body strong: 14-16sp / 600 (guide) -->
+    <style name="BodyStrong">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <!-- Body secondary: 11-12sp / 400 (guide) -->
+    <style name="BodySecondary">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Monospace for all raw technical data (IPs, ports, paths). -->
+    <style name="MonoData">
+        <item name="android:typeface">monospace</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <!-- Main CTA: white bg / black text, 16dp radius (guide) -->
+    <style name="BtnPrimary" parent="android:Widget.Holo.Button">
+        <item name="android:background">@drawable/btn_primary</item>
+        <item name="android:textColor">#000000</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:minHeight">64dp</item>
+    </style>
+
+<!-- Secondary: 1px white@10% border, transparent (guide) -->
+    <style name="BtnOutline" parent="android:Widget.Holo.Button">
+        <item name="android:background">@drawable/btn_outline</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:minHeight">56dp</item>
+    </style>
+
+    <!-- Card container for forms -->
+    <style name="Card">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:padding">16dp</item>
+    </style>
+</resources>

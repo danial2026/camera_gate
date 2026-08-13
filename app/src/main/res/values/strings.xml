@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CameraGate</string>
+    <string name="app_title">CameraGate</string>
+    <string name="app_subtitle">SELF-HOSTED CAMERA SERVER ON LAN</string>
+
+    <string name="sec_server">SERVER</string>
+    <string name="sec_camera">CAMERA</string>
+    <string name="sec_record">RECORD</string>
+    <string name="sec_addresses">LAN ADDRESSES</string>
+    <string name="exit_title">EXIT?</string>
+    <string name="exit_running_msg">SERVER IS RUNNING. STOP IT AND EXIT?</string>
+    <string name="exit_idle_msg">EXIT CAMERAGATE?</string>
+    <string name="btn_exit">EXIT</string>
+    <string name="btn_cancel">CANCEL</string>
+    <string name="sec_connect">CONNECT</string>
+    <string name="sec_preview">PREVIEW</string>
+    <string name="sec_about">ABOUT</string>
+    <string name="btn_website">DEVELOPER SITE</string>
+    <string name="btn_source">SOURCE CODE</string>
+
+    <string name="lbl_status">STATUS</string>
+    <string name="lbl_camera">CAMERA ID</string>
+
+    <string name="status_running">RUNNING · %1$s</string>
+    <string name="status_stopped">STOPPED</string>
+    <string name="camera_closed">CLOSED</string>
+    <string name="recording_on">RECORDING · %1$s</string>
+    <string name="recording_off">IDLE</string>
+
+    <string name="start_server">START SERVER</string>
+    <string name="stop_server">STOP SERVER</string>
+    <string name="start_recording">START RECORDING</string>
+    <string name="stop_recording">STOP RECORDING</string>
+    <string name="settings">SETTINGS</string>
+    <string name="refresh">REFRESH</string>
+    <string name="save">SAVE</string>
+
+    <string name="server_start_failed">SERVER FAILED TO START — CHECK PORT</string>
+    <string name="record_start_failed">RECORDING FAILED TO START</string>
+    <string name="record_need_server">START THE SERVER FIRST TO RECORD</string>
+    <string name="record_started">RECORDING TO %1$s</string>
+    <string name="record_stopped_nothing">NOTHING RECORDED</string>
+    <string name="record_saved">SAVED · %1$s</string>
+
+    <string name="preview_hint">CAMERA IS STREAMING TO THE LAN\nOPEN http://&lt;PHONE IP&gt;:PORT/ FROM ANY BROWSER</string>
+    <string name="no_address">NO LAN ADDRESS FOUND</string>
+
+    <string name="service_notification_title">CameraGate</string>
+    <string name="service_notification_text">Camera server running — tap to open</string>
+    <string name="service_channel_name">CameraGate service</string>
+    <string name="service_channel_description">Keeps the camera server alive while the phone is locked</string>
+
+    <string name="settings_title">SERVER SETTINGS</string>
+    <string name="settings_port">PORT (1–65535)</string>
+    <string name="settings_token">AUTH TOKEN (EMPTY = NO AUTH)</string>
+    <string name="settings_camera">CAMERA ID (0 = BACK, 1 = FRONT)</string>
+    <string name="settings_address">LISTEN ADDRESS</string>
+    <string name="settings_size">STREAM RESOLUTION</string>
+    <string name="settings_fps">STREAM FPS</string>
+    <string name="fps_auto">AUTO (UNCAPPED)</string>
+    <string name="settings_osd">STATUS OVERLAY (TIME · FPS · BATTERY)</string>
+    <string name="addr_all">0.0.0.0 — ALL INTERFACES</string>
+    <string name="addr_local">127.0.0.1 — LOCAL ONLY</string>
+    <string name="size_auto">AUTO (LARGEST)</string>
+    <string name="hint_port">PORT</string>
+    <string name="hint_token">AUTH TOKEN</string>
+    <string name="hint_camera">CAMERA ID</string>
+    <string name="settings_language">LANGUAGE</string>
+    <string name="lang_en">English</string>
+    <string name="lang_fa">فارسی</string>
+    <string name="qr_content_desc">QR code of the server URL</string>
+    <string name="settings_invalid">INVALID VALUES</string>
+    <string name="settings_restart_needed">APPLIES AFTER SERVER RESTART</string>
+</resources>

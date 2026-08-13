@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spinner closed-state item: explicit colors so selection stays visible
+     regardless of device/theme defaults (dark theme dropdowns can otherwise
+     render same-color text on same-color popup). -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_vertical"
+    android:singleLine="true"
+    android:ellipsize="end"
+    android:textSize="15sp"
+    android:textColor="@color/text_primary" />

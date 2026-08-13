@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Secondary: transparent, 1px white@10% border, 12dp radius. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#00000000" />
+    <stroke android:width="1dp" android:color="@color/white_10" />
+    <corners android:radius="12dp" />
+</shape>

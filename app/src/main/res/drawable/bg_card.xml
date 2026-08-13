@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Card container: near-black surface, 1px divider border, 12dp radius, no elevation. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/surface" />
+    <stroke android:width="1dp" android:color="@color/divider" />
+    <corners android:radius="12dp" />
+</shape>

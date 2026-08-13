@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android:letterSpacing only exists since API 21; style bags merge across
+     configurations, so these items apply on 5.0+ only (no-op below). -->
+<resources>
+    <style name="AppTitle">
+        <item name="android:letterSpacing">0.12</item>
+    </style>
+
+    <style name="StatusLabel">
+        <item name="android:letterSpacing">0.12</item>
+    </style>
+
+    <style name="SectionHeader">
+        <item name="android:letterSpacing">0.12</item>
+    </style>
+
+    <style name="BtnPrimary">
+        <item name="android:letterSpacing">0.15</item>
+    </style>
+
+    <style name="BtnOutline">
+        <item name="android:letterSpacing">0.15</item>
+    </style>
+</resources>

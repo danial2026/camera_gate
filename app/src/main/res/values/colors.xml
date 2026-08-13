@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CameraGate palette - follows UI_DESIGN_GUIDE.md:
+  pure black background, near-black surfaces, white hierarchy via opacity.
+-->
+<resources>
+    <color name="background">#000000</color>
+    <color name="surface">#0A0A0A</color>
+    <color name="divider">#1A1A1A</color>
+
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#666666</color>
+    <color name="text_hint">#4D4D4D</color>
+
+    <!-- white at 5% opacity (disabled bg) -->
+    <color name="white_05">#0D0D0D</color>
+    <!-- white at 10% opacity (borders) -->
+    <color name="white_10">#1A1A1A</color>
+
+    <color name="success">#00FF88</color>
+    <color name="warning">#FFCC00</color>
+    <color name="danger">#FF3366</color>
+
+    <color name="ic_launcher_background">#000000</color>
+</resources>

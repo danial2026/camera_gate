@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Main CTA: solid white, 16dp radius (guide: Idle = white bg / black text). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/text_primary" />
+    <corners android:radius="16dp" />
+</shape>
