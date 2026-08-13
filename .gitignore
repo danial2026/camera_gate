@@ -17,3 +17,5 @@ screenshot/
 
 # OS
 .DS_Store
+
+.freebuff/
