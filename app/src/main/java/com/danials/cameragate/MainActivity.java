@@ -37,7 +37,8 @@ import java.util.Locale;
  * surfaces, uppercase labels, monospace raw data.
  *
  * - Server STOPPED: white CTA "START SERVER", camera preview is live here.
- * - Server RUNNING: red CTA "STOP SERVER", camera is owned by the server.
+ * - Server RUNNING: red CTA "STOP SERVER", the preview card shows the live
+ *   stream from the server (the camera itself is owned by the server).
  */
 public class MainActivity extends Activity implements CameraGate.Listener {
 

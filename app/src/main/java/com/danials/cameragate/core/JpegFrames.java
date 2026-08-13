@@ -120,7 +120,7 @@ public final class JpegFrames {
     private volatile int faceMaxFaces = 4;
     private volatile int faceFinestDiv = 2;
     private volatile long faceScanMs = DETECT_INTERVAL_MS_DEFAULT;
-    private volatile int faceMinNeighbors = 3;
+    private volatile int faceMinNeighbors = 2;
     private volatile boolean faceDeepScan = true;
     // boxes drawn by the converter: written by the scanner, read through
     // the volatile count below (release/acquire keeps them in sync)
@@ -596,11 +596,6 @@ public final class JpegFrames {
                 : (faceFinestDiv == 2 ? 2 : (faceFinestDiv == 3 ? 1 : 0));
         // 1/2 is the practical finest level: full-res scans take seconds
         maxLevel = Math.min(2, maxLevel + (faceDeepScan ? 1 : 0));
-        if (lastPassMs > 900) {
-            // expensive scans (q72, far faces, old phone) go no finer
-            // than 1/3: a seconds-long pass must not become the norm
-            maxLevel = Math.min(maxLevel, 1);
-        }
         int div = escLevel == 0 ? 4 : (escLevel == 1 ? 3
                 : (escLevel == 2 ? 2 : 1));
         int dw = Math.max(96, width / div) & ~1;
@@ -696,7 +691,7 @@ public final class JpegFrames {
             faceCount = count;
             if (count > 0) {
                 emptyRuns = 0;
-                if (++foundRuns >= 10 && escLevel > 0) {
+                if (++foundRuns >= 5 && escLevel > 0) {
                     // steady detections at a finer scale: try coarser
                     // again to save CPU
                     escLevel--;
@@ -704,8 +699,8 @@ public final class JpegFrames {
                 }
             } else {
                 foundRuns = 0;
-                if (++emptyRuns >= 4 && escLevel < maxLevel) {
-                    // nothing found: scan progressively finer
+                if (++emptyRuns >= 2 && escLevel < maxLevel) {
+                    // nothing found: escalate to the next finer level
                     escLevel++;
                     emptyRuns = 0;
                 }
@@ -757,7 +752,7 @@ public final class JpegFrames {
 
     /**
      * Loads the bundled Haar cascade from assets and builds the engine once
-     * (lazily, on the converter thread). Returns false when unavailable so
+     * (lazily, on the scanner thread). Returns false when unavailable so
      * detection degrades gracefully to zero boxes.
      */
     private boolean ensureEngine() {

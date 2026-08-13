@@ -20,8 +20,10 @@ API, so no modern Android features are required on the device running it.
 
 - `GET /camera` — camera & server state as JSON
 - `GET /snapshot` — latest frame as JPEG
-- `GET /stream` — MJPEG live stream (plays in any browser tab)
-- `GET /ws` — WebSocket stream, binary JPEG frames
+- `GET /stream` — MJPEG live stream (plays in any browser tab); each
+  client gets the newest frame at most ~12 fps, never a backlog, so a slow
+  viewer cannot drift behind live time or stall the pipeline
+- `GET /ws` — WebSocket stream, binary JPEG frames (same newest-frame policy)
 - `POST /record/start` / `POST /record/stop` — MP4 recording to `/sdcard/CameraGate`
 - `GET /qr` — QR code (PNG) of the server URL
 - `GET /health` — liveness probe
@@ -33,13 +35,20 @@ API, so no modern Android features are required on the device running it.
 - foreground service (notification + wake lock) keeps the camera alive with
   the screen off; an AlarmManager watchdog + `onTaskRemoved` restart make the
   server survive swipe-away and task killers (especially on Android 4.x)
+- live in-app preview: while the server runs, the preview card on the main
+  screen shows the actual stream (same frames the LAN sees, overlay
+  included) instead of a static hint
 - on-device face detection: a pure-Java Viola-Jones engine (a faithful port
   of OpenCV's Haar cascade classifier — integral images, tilted integrals,
   variance normalization — with the bundled `haarcascade_frontalface_alt`
   model, zero OS/NDK dependencies) draws hacker-style green targeting boxes
-  on the stream; frames are scanned upright and rotated 90° (the legacy
-  stream is never rotated), and scale, scan rate, max faces,
-  strictness and a full-res re-acquire probe are tunable in settings
+  on the stream. Detection runs on its own background thread so a slow scan
+  never stalls the stream: it always re-scans the newest frame, paced by the
+  cost of the last pass (expensive passes on weak phones are spaced out and
+  capped at 1/2 scale), and the boxes simply update less often while they
+  are expensive. Frames are scanned upright and rotated 90° (the legacy
+  stream is never rotated), and scale, scan rate, max faces, strictness and
+  a full-res re-acquire probe are tunable in settings
 - host-side verification: the cascade engine is plain Java, so
   `scripts/hosttest.sh` compiles it with the desktop JDK and runs 2200+
   assertions against hand-built micro-cascades and an independent translation
@@ -65,7 +74,7 @@ scripts/device_test.sh         # full on-device smoke + resilience test
 ```
 
 APK output: `app/build/outputs/apk/` — e.g.
-`cameragate-v0.0.2-release.apk`.
+`cameragate-v0.0.3-release.apk`.
 
 `scripts/build.sh release` signs with `app/key.properties` +
 `app/upload-keystore.jks` when present; on a fresh clone without them the
@@ -135,13 +144,15 @@ stops delivering preview frames to MediaRecorder, so `/snapshot`,
 | Face detection | hacker-style green targeting boxes around faces (Haar cascade engine) |
 | Face max | maximum faces per scan (1..32) |
 | Face finest scale | smallest scale probed (1/4 .. full res); smaller = smaller faces = slower |
-| Face scan interval | ms between detection passes (60..2000) |
-| Face strictness | minimum overlapping detections per face (1 loose .. 5 strict) |
+| Face scan interval | base ms between detection passes (60..2000); the actual interval grows with the measured cost of a pass |
+| Face strictness | minimum overlapping detections per face (1 loose .. 5 strict, default 2 for compressed streams) |
 | Face deep scan | full-resolution re-acquire probe while nothing is found |
 | Language | UI language: English or فارسی — applies immediately |
 | Camera id | `0` back camera, `1` front camera |
 
-Changes apply after restarting the server.
+The stream settings (resolution, fps cap) and the face detection tunables
+apply live; the network settings (port, token, listen address, camera id)
+take effect on the next server start.
 
 ---
 
@@ -185,7 +196,8 @@ app/src/main/java/com/danials/cameragate/
     core/
       CameraGate.java         facade: camera + HTTP + settings
       CameraSource.java       legacy Camera API + MediaRecorder recording
-      JpegFrames.java         NV21 -> JPEG pipeline shared by all clients
+      JpegFrames.java         NV21 -> JPEG pipeline (converter thread) plus
+                              the face detection scanner thread
       HttpServer.java         ServerSocket HTTP/1.1 + MJPEG + WebSocket
       Settings.java           SharedPreferences persistence
       face/

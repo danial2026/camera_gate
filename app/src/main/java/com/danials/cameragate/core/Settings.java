@@ -96,7 +96,8 @@ public final class Settings {
 
     /**
      * Hacker-mode face detection: green targeting boxes around faces,
-     * using the framework FaceDetector (no extra libraries).
+     * using the bundled pure-Java Haar cascade engine on its own scan
+     * thread (no OS or NDK dependencies).
      */
     public boolean getFaceDetectEnabled() {
         return prefs().getBoolean("faceDetect", false);
@@ -147,7 +148,7 @@ public final class Settings {
 
     /** Detection strictness: minimum overlapping box count (1..5). Default 3. */
     public int getFaceMinNeighbors() {
-        int v = prefs().getInt("faceMinNeighbors", 3);
+        int v = prefs().getInt("faceMinNeighbors", 2);
         return v < 1 ? 1 : (v > 5 ? 5 : v);
     }
 
