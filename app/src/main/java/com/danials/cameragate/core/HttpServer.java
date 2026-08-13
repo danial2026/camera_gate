@@ -40,6 +40,12 @@ public final class HttpServer {
     private static final String TAG = "CameraGate";
     private static final byte[] NOT_FOUND = "{\"error\":\"not found\"}"
             .getBytes(java.nio.charset.Charset.forName("UTF-8"));
+    // per-client cap for stream writers: always the newest frame, never the
+    // backlog, or a slow consumer falls minutes behind over hours
+    private static final int STREAM_MIN_INTERVAL_MS = 1000 / 12;
+    // a frame that takes this long to push means the client is dead or
+    // hopelessly slow: cut it loose so a zombie cannot park a pool thread
+    private static final int STREAM_STALL_MS = 3000;
 
     private final CameraGate gate;
 
@@ -216,19 +222,25 @@ public final class HttpServer {
 
         long seq = gate.frames().latestSeq();
         byte[] last = null;
+        long lastWriteAt = 0;
         long idle = 0;
         while (running) {
             byte[] jpeg = gate.frames().latest();
-            if (jpeg != last) {
+            long now = System.currentTimeMillis();
+            if (jpeg != null && jpeg != last
+                    && now - lastWriteAt >= STREAM_MIN_INTERVAL_MS) {
                 last = jpeg;
-                if (jpeg != null) {
-                    byte[] header = ("\r\n--" + boundary + "\r\n" +
-                            "Content-Type: image/jpeg\r\n" +
-                            "Content-Length: " + jpeg.length + "\r\n\r\n")
-                            .getBytes(java.nio.charset.Charset.forName("US-ASCII"));
-                    out.write(header);
-                    out.write(jpeg);
-                    out.flush();
+                lastWriteAt = now;
+                byte[] header = ("\r\n--" + boundary + "\r\n" +
+                        "Content-Type: image/jpeg\r\n" +
+                        "Content-Length: " + jpeg.length + "\r\n\r\n")
+                        .getBytes(java.nio.charset.Charset.forName("US-ASCII"));
+                out.write(header);
+                out.write(jpeg);
+                out.flush();
+                if (System.currentTimeMillis() - lastWriteAt > STREAM_STALL_MS) {
+                    Log.w(TAG, "dropping stalled /stream client");
+                    break;
                 }
             }
             seq = gate.frames().awaitNewer(seq, 200);
@@ -269,17 +281,24 @@ public final class HttpServer {
         InputStream in = socket.getInputStream();
 
         long seq = gate.frames().latestSeq();
+        long lastWriteAt = 0;
         while (running) {
             byte[] jpeg = gate.frames().latest();
-            if (jpeg != null && gate.frames().latestSeq() != seq) {
+            long now = System.currentTimeMillis();
+            if (jpeg != null && gate.frames().latestSeq() != seq
+                    && jpeg.length < 65536
+                    && now - lastWriteAt >= STREAM_MIN_INTERVAL_MS) {
                 seq = gate.frames().latestSeq();
-                if (jpeg.length < 65536) {
-                    byte[] frame = new byte[2 + jpeg.length];
-                    frame[0] = (byte) 0x82; // FIN + binary opcode
-                    frame[1] = (byte) jpeg.length;
-                    System.arraycopy(jpeg, 0, frame, 2, jpeg.length);
-                    out.write(frame);
-                    out.flush();
+                lastWriteAt = now;
+                byte[] frame = new byte[2 + jpeg.length];
+                frame[0] = (byte) 0x82; // FIN + binary opcode
+                frame[1] = (byte) jpeg.length;
+                System.arraycopy(jpeg, 0, frame, 2, jpeg.length);
+                out.write(frame);
+                out.flush();
+                if (System.currentTimeMillis() - lastWriteAt > STREAM_STALL_MS) {
+                    Log.w(TAG, "dropping stalled /ws client");
+                    break;
                 }
             }
             try {
