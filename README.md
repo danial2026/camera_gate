@@ -6,21 +6,14 @@ Self-hosted camera server Android app. Turns an old Android phone into a camera 
 
 ## Screenshots
 
-Main Screen (Running)
+| Main Screen (Running) | Main Screen (Bottom) |
+| --- | --- |
+| ![Main Screen](screenshots/01_main_top_running.png) | ![Main Screen](screenshots/02_main_bottom_final.png) |
 
-Main Screen (Bottom)
 
-[![Main Screen](/danial2026/camera_gate/raw/main/screenshots/01_main_top_running.png)](/danial2026/camera_gate/blob/main/screenshots/01_main_top_running.png)
-
-[![Main Screen](/danial2026/camera_gate/raw/main/screenshots/02_main_bottom_final.png)](/danial2026/camera_gate/blob/main/screenshots/02_main_bottom_final.png)
-
-Settings
-
-Advanced Settings
-
-[![Settings](/danial2026/camera_gate/raw/main/screenshots/03_settings_keyboard_closed.png)](/danial2026/camera_gate/blob/main/screenshots/03_settings_keyboard_closed.png)
-
-[![Advanced Settings](/danial2026/camera_gate/raw/main/screenshots/04_settings_bottom_advanced.png)](/danial2026/camera_gate/blob/main/screenshots/04_settings_bottom_advanced.png)
+| Settings | Advanced Settings |
+| --- | --- |
+| ![Settings](screenshots/03_settings_keyboard_closed.png) | ![Advanced Settings](screenshots/04_settings_bottom_advanced.png) |
 
 ## Features
 
