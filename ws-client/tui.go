@@ -180,13 +180,16 @@ func (w *wizard) handle(k int) (redraw, start, quit bool) {
 		switch k {
 		case kEnter:
 			w.commitEdit()
-		case kEsc, kUp, kDown:
+		case kUp, kDown:
 			w.commitEdit()
 			if k == kUp {
 				w.sel = max(0, w.sel-1)
 			} else if k == kDown {
 				w.sel = min(rowCount-1, w.sel+1)
 			}
+		case kEsc:
+			w.edit = false
+			w.custom = false
 		case kHome:
 			w.pos = 0
 		case kEnd:
@@ -333,15 +336,15 @@ func (w *wizard) draw() {
 	var sb strings.Builder
 	sb.WriteString("\x1b[2J\x1b[H")
 	inner := tuiW - 2
-	sb.WriteString("┌" + strings.Repeat("─", inner) + "┐\n")
-	sb.WriteString("│" + centerStr("CameraGate viewer setup", inner) + "│\n")
-	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\n")
+	sb.WriteString("┌" + strings.Repeat("─", inner) + "┐\r\n")
+	sb.WriteString("│" + centerStr("CameraGate viewer setup", inner) + "│\r\n")
+	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\r\n")
 	for _, line := range w.rowLines(inner) {
-		sb.WriteString("│" + padRight(line, inner) + "│\n")
+		sb.WriteString("│" + padRight(line, inner) + "│\r\n")
 	}
-	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\n")
-	sb.WriteString("│" + centerStr("↑/↓ or j/k move · Enter edit · Esc quit", inner) + "│\n")
-	sb.WriteString("└" + strings.Repeat("─", inner) + "┘\n")
+	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\r\n")
+	sb.WriteString("│" + centerStr("↑/↓ or j/k move · Enter edit · Esc back", inner) + "│\r\n")
+	sb.WriteString("└" + strings.Repeat("─", inner) + "┘\r\n")
 	os.Stdout.WriteString(sb.String())
 }
 
@@ -393,13 +396,13 @@ func (w *wizard) drawMenu() {
 	var sb strings.Builder
 	sb.WriteString("\x1b[2J\x1b[H")
 	inner := tuiW - 2
-	sb.WriteString("┌" + strings.Repeat("─", inner) + "┐\n")
+	sb.WriteString("┌" + strings.Repeat("─", inner) + "┐\r\n")
 	title := "Select retention period"
 	if w.menuKind == menuTransport {
 		title = "Select transport"
 	}
-	sb.WriteString("│" + centerStr(title, inner) + "│\n")
-	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\n")
+	sb.WriteString("│" + centerStr(title, inner) + "│\r\n")
+	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\r\n")
 	for i, o := range w.menuOpts {
 		mark := "   "
 		if i == w.menuIdx {
@@ -409,11 +412,11 @@ func (w *wizard) drawMenu() {
 		if o == "Custom hours..." {
 			line += " (e.g. 2.5)"
 		}
-		sb.WriteString("│" + padRight(line, inner) + "│\n")
+		sb.WriteString("│" + padRight(line, inner) + "│\r\n")
 	}
-	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\n")
-	sb.WriteString("│" + centerStr("↑/↓ choose · Enter confirm · Esc back", inner) + "│\n")
-	sb.WriteString("└" + strings.Repeat("─", inner) + "┘\n")
+	sb.WriteString("├" + strings.Repeat("─", inner) + "┤\r\n")
+	sb.WriteString("│" + centerStr("↑/↓ choose · Enter confirm · Esc back", inner) + "│\r\n")
+	sb.WriteString("└" + strings.Repeat("─", inner) + "┘\r\n")
 	os.Stdout.WriteString(sb.String())
 }
 
@@ -581,26 +584,36 @@ func maskToken(t string) string {
 }
 
 func padRight(s string, n int) string {
-	if len(s) >= n {
+	r := utf8.RuneCountInString(s)
+	if r >= n {
 		return s
 	}
-	return s + strings.Repeat(" ", n-len(s))
+	return s + strings.Repeat(" ", n-r)
 }
 
 func centerStr(s string, w int) string {
-	if len(s) >= w {
-		return s[:w]
+	r := utf8.RuneCountInString(s)
+	if r >= w {
+		return runeSlice(s, w)
 	}
-	l := (w - len(s)) / 2
-	return strings.Repeat(" ", l) + s + strings.Repeat(" ", w-len(s)-l)
+	l := (w - r) / 2
+	return strings.Repeat(" ", l) + s + strings.Repeat(" ", w-r-l)
+}
+
+func runeSlice(s string, w int) string {
+	rs := []rune(s)
+	if len(rs) <= w {
+		return s
+	}
+	return string(rs[:w])
 }
 
 func truncate(s string, w int) string {
-	if len(s) <= w {
+	if utf8.RuneCountInString(s) <= w {
 		return s
 	}
 	if w <= 1 {
-		return s[:w]
+		return runeSlice(s, w)
 	}
-	return s[:w-1] + "…"
+	return runeSlice(s, w-1) + "…"
 }
