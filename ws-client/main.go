@@ -50,16 +50,6 @@ func dialCurl(url, token string) (*streamConn, error) {
 		return nil, err
 	}
 	br := bufio.NewReaderSize(stdout, 1<<16)
-	for {
-		line, err := br.ReadString('\n')
-		if err != nil {
-			cmd.Process.Kill()
-			return nil, fmt.Errorf("curl stream: %v", err)
-		}
-		if len(bytes.TrimSpace([]byte(line))) == 0 {
-			break
-		}
-	}
 	go func() {
 		if err := cmd.Wait(); err != nil {
 			log.Printf("curl exited: %v", err)
@@ -238,7 +228,7 @@ func main() {
 	direct := flag.Bool("direct", false, "use raw Go TCP dialer instead of curl transport")
 	flag.Parse()
 
-	a := app.New()
+	a := app.NewWithID("com.danials.cameragate.viewer")
 	w := a.NewWindow("CameraGate stream: " + *url)
 	w.Resize(fyne.NewSize(960, 600))
 

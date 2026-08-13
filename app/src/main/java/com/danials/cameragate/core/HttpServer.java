@@ -328,11 +328,14 @@ public final class HttpServer {
             out.write(payload);
         } else {
             out.write(127);                  // 8-byte extended length
-            for (int i = 7; i >= 0; i--) {
-                out.write(n >>> (8 * i));
-            }
-            out.write(0x41);                 // MARKER A
-            out.write(0x42);                 // MARKER B
+            out.write(0);
+            out.write(0);
+            out.write(0);
+            out.write(0);
+            out.write(n >>> 24);
+            out.write(n >>> 16);
+            out.write(n >>> 8);
+            out.write(n);
             out.write(payload);
         }
     }
