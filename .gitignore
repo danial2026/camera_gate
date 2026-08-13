@@ -21,4 +21,5 @@ screenshot/
 .freebuff/
 
 /ws-client/frames/
+/ws-client/snapshots/
 /ws-client/ws-client
