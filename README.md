@@ -10,29 +10,29 @@ Main Screen (Running)
 
 Live Preview + QR
 
-[![Main Screen](/danial2026/camera_gate/raw/main/screenshots/01_main_top_running.png)](/danial2026/camera_gate/blob/main/screenshots/01_main_top_running.png)
+[![Main Screen](https://github.com/danial2026/camera_gate/raw/main/screenshots/01_main_top_running.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/01_main_top_running.png)
 
-[![QR Connect](/danial2026/camera_gate/raw/main/screenshots/02_main_qr_connect.png)](/danial2026/camera_gate/blob/main/screenshots/02_main_qr_connect.png)
+[![QR Connect](https://github.com/danial2026/camera_gate/raw/main/screenshots/02_main_qr_connect.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/02_main_qr_connect.png)
 
 Live Stream Preview
 
 Recording
 
-[![Preview Streaming](/danial2026/camera_gate/raw/main/screenshots/03_main_preview_streaming.png)](/danial2026/camera_gate/blob/main/screenshots/03_main_preview_streaming.png)
+[![Preview Streaming](https://github.com/danial2026/camera_gate/raw/main/screenshots/03_main_preview_streaming.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/03_main_preview_streaming.png)
 
-[![Recording](/danial2026/camera_gate/raw/main/screenshots/05_main_recording_bottom.png)](/danial2026/camera_gate/blob/main/screenshots/05_main_recording_bottom.png)
+[![Recording](https://github.com/danial2026/camera_gate/raw/main/screenshots/05_main_recording_bottom.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/05_main_recording_bottom.png)
 
 Face Detection
 
 Settings
 
-[![Face Detection](/danial2026/camera_gate/raw/main/screenshots/16_main_stream_face_detect.png)](/danial2026/camera_gate/blob/main/screenshots/16_main_stream_face_detect.png)
+[![Face Detection](https://github.com/danial2026/camera_gate/raw/main/screenshots/16_main_stream_face_detect.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/16_main_stream_face_detect.png)
 
-[![Settings](/danial2026/camera_gate/raw/main/screenshots/10_settings_keyboard_open.png)](/danial2026/camera_gate/blob/main/screenshots/10_settings_keyboard_open.png)
+[![Settings](https://github.com/danial2026/camera_gate/raw/main/screenshots/10_settings_keyboard_open.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/10_settings_keyboard_open.png)
 
 Advanced Settings
 
-[![Advanced Settings](/danial2026/camera_gate/raw/main/screenshots/12_settings_bottom_advanced.png)](/danial2026/camera_gate/blob/main/screenshots/12_settings_bottom_advanced.png)
+[![Advanced Settings](https://github.com/danial2026/camera_gate/raw/main/screenshots/12_settings_bottom_advanced.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/12_settings_bottom_advanced.png)
 
 ## Features
 
