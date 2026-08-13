@@ -15,7 +15,6 @@ import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.YuvImage;
-import android.media.FaceDetector;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
@@ -24,13 +23,20 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import com.danials.cameragate.BuildConfig;
+import com.danials.cameragate.core.face.Cascade;
+import com.danials.cameragate.core.face.CascadeParser;
+import com.danials.cameragate.core.face.FaceDetector;
+import com.danials.cameragate.core.face.IntRect;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.FileReader;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
 
@@ -101,15 +107,15 @@ public final class JpegFrames {
     private long lastConvertTime = 0;
 
     // ---- face detection (hacker boxes) ----
-    // The framework's android.media.FaceDetector is the smallest face
-    // detection on Android: it is built into the OS since API 1, needs no
-    // libraries and no RAM beyond a couple of RGB_565 bitmaps. The legacy
-    // Camera API delivers sensor-raw NV21 frames, which the stream never
-    // rotates, so a person can appear sideways to the detector (it only
-    // matches horizontally-aligned eye pairs). To be posture-proof we scan
-    // the frame as-is and rotated 90 degrees - search mode does both per
-    // slot, tracking mode alternates to keep fps. Scale, rate, max faces,
-    // contrast and the full-res probe are user-tunable in Settings.
+    // A pure-Java Viola-Jones cascade engine (core/face) replaces the
+    // framework's android.media.FaceDetector: no OS dependency, works on
+    // every API level, and the Haar classifier is far more robust than the
+    // Neven engine. The legacy Camera API delivers sensor-raw NV21 frames,
+    // which the stream never rotates, so a person can appear sideways to
+    // the detector: we scan the frame as-is and rotated 90 degrees - search
+    // mode does both per slot, tracking mode alternates to keep fps. Scale,
+    // rate, max faces, contrast and the full-res probe are user-tunable in
+    // Settings.
     private static final int MAX_FACES_HARD = 8;
     private static final long DETECT_INTERVAL_MS_DEFAULT = 120;
     private volatile boolean faceDetectEnabled = false;
@@ -118,16 +124,16 @@ public final class JpegFrames {
     private volatile long faceScanMs = DETECT_INTERVAL_MS_DEFAULT;
     private volatile float faceContrast = 1.35f;
     private volatile boolean faceDeepScan = true;
-    private FaceDetector detector0;
-    private FaceDetector detector90;
+    private FaceDetector faceEngine;
+    private boolean engineFailed = false;
     private Bitmap bmp0;
     private Bitmap bmp90;
     private int dbW;
     private int dbH;
-    private final FaceDetector.Face[] detectFaces =
-            new FaceDetector.Face[MAX_FACES_HARD];
-    private final PointF detectMid = new PointF();
-    private final float[] pts = new float[8];
+    private int[] dbPixels;
+    private final byte[][] dbGray = new byte[2][];
+    private final List<IntRect> engineBoxes = new ArrayList<IntRect>(8);
+    private final float[] boxPts = new float[8];
     private long lastDetectAt = -1;
     private long lastDetectLogAt = -1;
     private long detectIntervalMs = DETECT_INTERVAL_MS_DEFAULT;
@@ -519,7 +525,10 @@ public final class JpegFrames {
             detectIntervalMs = want;
         }
         lastDetectAt = now;
-        // even dimensions: the native FFT detector requires an even width
+        if (!ensureEngine()) {
+            faceCount = 0;
+            return;
+        }
         int maxLevel = faceFinestDiv == 1 ? 3
                 : (faceFinestDiv == 2 ? 2 : (faceFinestDiv == 3 ? 1 : 0));
         maxLevel = Math.min(3, maxLevel + (faceDeepScan ? 1 : 0));
@@ -550,15 +559,9 @@ public final class JpegFrames {
                 dbH = dh;
                 bmp0 = Bitmap.createBitmap(dw, dh, Bitmap.Config.RGB_565);
                 bmp90 = Bitmap.createBitmap(dh, dw, Bitmap.Config.RGB_565);
-                // WARNING: Android's actual framework constructor signature
-                // is FaceDetector(width, height, maxFaces), not the
-                // (maxFaces, width, height) shown in some API docs. All
-                // three params are int, so a swapped call compiles fine but
-                // throws "bitmap size doesn't match initialization" at
-                // runtime (observed on Android 4.3). The face width must
-                // also be even.
-                detector0 = new FaceDetector(dw, dh, faceMaxFaces);
-                detector90 = new FaceDetector(dh, dw, faceMaxFaces);
+                dbPixels = new int[dw * dh];
+                dbGray[0] = new byte[dw * dh];
+                dbGray[1] = new byte[dw * dh];
                 Log.i(TAG, "detector init: frame=" + width + "x" + height
                         + " pass0=" + dw + "x" + dh
                         + " pass90=" + dh + "x" + dw);
@@ -579,16 +582,15 @@ public final class JpegFrames {
                 // search/hunt mode: both orientations every slot so a face
                 // only the other rotation would catch is not missed while
                 // we still have room for more boxes
-                int c0 = runPass(detector0, bmp0, full, map0, inv0, boxes0);
-                int c90 = runPass(detector90, bmp90, full, map90, inv90, boxes90);
+                int c0 = runPass(bmp0, full, map0, inv0, boxes0);
+                int c90 = runPass(bmp90, full, map90, inv90, boxes90);
                 count0 = c0;
                 count90 = c90;
                 slot0 = ++slotTick;
                 slot90 = ++slotTick;
             } else {
                 boolean rot = (slotTick++ & 1) != 0;
-                int n = runPass(rot ? detector90 : detector0,
-                        rot ? bmp90 : bmp0, full,
+                int n = runPass(rot ? bmp90 : bmp0, full,
                         rot ? map90 : map0, rot ? inv90 : inv0,
                         rot ? boxes90 : boxes0);
                 if (rot) {
@@ -675,23 +677,66 @@ public final class JpegFrames {
     }
 
     /**
-     * One detector pass: draws the full-res frame transformed by [map] into
-     * the small [target] bitmap, runs the detector, maps any face boxes back
-     * into full-resolution coordinates via [inv] and stores them in [out].
-     * Returns the number of faces found.
+     * Loads the bundled Haar cascade from assets and builds the engine once
+     * (lazily, on the converter thread). Returns false when unavailable so
+     * detection degrades gracefully to zero boxes.
      */
-    private int runPass(FaceDetector detector, Bitmap target, Bitmap full,
+    private boolean ensureEngine() {
+        if (faceEngine != null) {
+            return true;
+        }
+        if (engineFailed || appContext == null) {
+            return false;
+        }
+        try {
+            InputStream in = appContext.getAssets().open(
+                    "cascades/haarcascade_frontalface_alt.xml");
+            Cascade c;
+            try {
+                c = CascadeParser.parse(in);
+            } finally {
+                in.close();
+            }
+            faceEngine = new FaceDetector(c);
+            Log.i(TAG, "face engine loaded: " + c.stageCount() + " stages, "
+                    + c.featureCount() + " features, "
+                    + c.windowWidth() + "x" + c.windowHeight());
+            return true;
+        } catch (Exception e) {
+            engineFailed = true;
+            Log.w(TAG, "face engine init failed", e);
+            return false;
+        }
+    }
+
+    /**
+     * One detector pass: draws the full-res frame transformed by [map] into
+     * the small [target] bitmap, runs the cascade engine on its grayscale
+     * extraction, maps any face boxes back into full-resolution coordinates
+     * via [inv] and stores them in [out]. Returns the number of faces.
+     */
+    private int runPass(Bitmap target, Bitmap full,
                         Matrix map, Matrix inv, Rect[] out) {
         Canvas dc = new Canvas(target);
         dc.drawBitmap(full, map, detectPaint);
+        int dw = target.getWidth();
+        int dh = target.getHeight();
+        target.getPixels(dbPixels, 0, dw, 0, 0, dw, dh);
+        boolean rot = target == bmp90;
+        byte[] gray = dbGray[rot ? 1 : 0];
+        int k = gray.length;
+        for (int i = 0; i < k; i++) {
+            int p = dbPixels[i];
+            gray[i] = (byte) ((((p >> 16) & 0xFF) * 77
+                    + ((p >> 8) & 0xFF) * 150 + (p & 0xFF) * 29 + 128) >> 8);
+        }
         long t0 = SystemClock.uptimeMillis();
         int n;
         try {
-            n = detector.findFaces(target, detectFaces);
-        } catch (IllegalArgumentException e) {
-            Log.e(TAG, "findFaces dims: target=" + target.getWidth() + "x"
-                    + target.getHeight(), e);
-            throw e;
+            n = faceEngine.detect(gray, dw, dh, faceMaxFaces, engineBoxes);
+        } catch (Exception e) {
+            Log.e(TAG, "engine pass failed", e);
+            return 0;
         }
         long dt = SystemClock.uptimeMillis() - t0;
         passCostSum += dt;
@@ -702,31 +747,16 @@ public final class JpegFrames {
         n = Math.min(n, faceMaxFaces);
         int count = 0;
         for (int i = 0; i < n; i++) {
-            FaceDetector.Face f = detectFaces[i];
-            if (f == null) {
-                continue;
-            }
-            f.getMidPoint(detectMid);
-            float ew = f.eyesDistance();
-            // four box corners in detection space: width ~2.8x, height ~3.4x
-            // the eye separation, centered on the eye midpoint
-            pts[0] = detectMid.x - ew * 1.4f;
-            pts[1] = detectMid.y - ew * 1.7f;
-            pts[2] = detectMid.x + ew * 1.4f;
-            pts[3] = detectMid.y - ew * 1.7f;
-            pts[4] = detectMid.x - ew * 1.4f;
-            pts[5] = detectMid.y + ew * 1.7f;
-            pts[6] = detectMid.x + ew * 1.4f;
-            pts[7] = detectMid.y + ew * 1.7f;
-            inv.mapPoints(pts);
-            int x1 = (int) Math.min(Math.min(pts[0], pts[2]),
-                    Math.min(pts[4], pts[6]));
-            int y1 = (int) Math.min(Math.min(pts[1], pts[3]),
-                    Math.min(pts[5], pts[7]));
-            int x2 = (int) Math.max(Math.max(pts[0], pts[2]),
-                    Math.max(pts[4], pts[6]));
-            int y2 = (int) Math.max(Math.max(pts[1], pts[3]),
-                    Math.max(pts[5], pts[7]));
+            IntRect b = engineBoxes.get(i);
+            boxPts[0] = b.x;
+            boxPts[1] = b.y;
+            boxPts[2] = b.x + b.width;
+            boxPts[3] = b.y + b.height;
+            inv.mapPoints(boxPts, 0, boxPts, 0, 2);
+            int x1 = (int) Math.min(boxPts[0], boxPts[2]);
+            int y1 = (int) Math.min(boxPts[1], boxPts[3]);
+            int x2 = (int) Math.max(boxPts[0], boxPts[2]);
+            int y2 = (int) Math.max(boxPts[1], boxPts[3]);
             out[count].set(x1, y1, x2, y2);
             count++;
         }
