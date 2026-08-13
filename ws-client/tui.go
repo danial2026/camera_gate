@@ -488,12 +488,16 @@ func readKey(r *bufio.Reader) (int, error) {
 // ------------------------------------------------------------------ term
 
 func enterRawMode() error {
-	out, err := exec.Command("stty", "-g").Output()
+	save := exec.Command("stty", "-g")
+	save.Stdin = os.Stdin
+	out, err := save.Output()
 	if err != nil {
 		return err
 	}
 	rawSaved = strings.TrimSpace(string(out))
-	if err := exec.Command("stty", "raw", "-echo").Run(); err != nil {
+	raw := exec.Command("stty", "raw", "-echo")
+	raw.Stdin = os.Stdin
+	if err := raw.Run(); err != nil {
 		return err
 	}
 	os.Stdout.WriteString("\x1b[2J\x1b[?25l\x1b[H")
@@ -507,7 +511,9 @@ func restoreTerm() {
 func exitRawMode() {
 	restoreTerm()
 	if rawSaved != "" {
-		exec.Command("stty", rawSaved).Run()
+		restore := exec.Command("stty", rawSaved)
+		restore.Stdin = os.Stdin
+		restore.Run()
 	}
 }
 
