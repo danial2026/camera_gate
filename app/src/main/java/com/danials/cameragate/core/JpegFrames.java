@@ -106,14 +106,18 @@ public final class JpegFrames {
     // libraries and no RAM beyond a couple of RGB_565 bitmaps. The legacy
     // Camera API delivers sensor-raw NV21 frames, which the stream never
     // rotates, so a person can appear sideways to the detector (it only
-    // matches horizontally-aligned eye pairs). To be posture-proof we run
-    // two passes every slot - the frame as-is and rotated 90 degrees - and
-    // keep the pass that finds more faces. Detection runs on ~1/5-scale
-    // copies so the 2013-era CPU keeps up; boxes are cached between runs
-    // and redrawn every frame (scan lines animate without re-detecting).
-    private static final int MAX_FACES = 4;
-    private static final long DETECT_INTERVAL_MS = 120;
+    // matches horizontally-aligned eye pairs). To be posture-proof we scan
+    // the frame as-is and rotated 90 degrees - search mode does both per
+    // slot, tracking mode alternates to keep fps. Scale, rate, max faces,
+    // contrast and the full-res probe are user-tunable in Settings.
+    private static final int MAX_FACES_HARD = 8;
+    private static final long DETECT_INTERVAL_MS_DEFAULT = 120;
     private volatile boolean faceDetectEnabled = false;
+    private volatile int faceMaxFaces = 4;
+    private volatile int faceFinestDiv = 2;
+    private volatile long faceScanMs = DETECT_INTERVAL_MS_DEFAULT;
+    private volatile float faceContrast = 1.35f;
+    private volatile boolean faceDeepScan = true;
     private FaceDetector detector0;
     private FaceDetector detector90;
     private Bitmap bmp0;
@@ -121,20 +125,21 @@ public final class JpegFrames {
     private int dbW;
     private int dbH;
     private final FaceDetector.Face[] detectFaces =
-            new FaceDetector.Face[MAX_FACES];
+            new FaceDetector.Face[MAX_FACES_HARD];
     private final PointF detectMid = new PointF();
     private final float[] pts = new float[8];
     private long lastDetectAt = -1;
     private long lastDetectLogAt = -1;
+    private long detectIntervalMs = DETECT_INTERVAL_MS_DEFAULT;
     // boxes actually drawn, plus per-orientation results so the freshest
     // pass that found faces wins (orientations alternate per slot)
-    private final Rect[] faceBoxes = new Rect[MAX_FACES];
-    private final Rect[] boxes0 = new Rect[MAX_FACES];
-    private final Rect[] boxes90 = new Rect[MAX_FACES];
+    private final Rect[] faceBoxes = new Rect[MAX_FACES_HARD];
+    private final Rect[] boxes0 = new Rect[MAX_FACES_HARD];
+    private final Rect[] boxes90 = new Rect[MAX_FACES_HARD];
     private int count0, count90, slot0 = -10, slot90 = -10;
     private int slotTick = 0;
-    // adaptive scan scale: idle at 1/4 (cheap), escalate to 1/3 then 1/2
-    // when nothing is found, step back down to keep fps once faces appear
+    // scan levels: 0=1/4, 1=1/3, 2=1/2, 3=full; adapts between coarse and
+    // the user's finest level (full only via the deep-scan probe)
     private int escLevel = 0;
     private int emptyRuns = 0;
     private int foundRuns = 0;
@@ -143,7 +148,7 @@ public final class JpegFrames {
     // Neven engine needs strong edges; this fights glare, washed-out
     // prints and the JPEG generation loss in the pipeline
     private final Paint detectPaint = new Paint();
-    private boolean detectPaintReady = false;
+    private float paintContrast = -1f;
     // per-pass timing so we can tune scale/cost from logcat
     private long passCostSum = 0;
     private int passCostN = 0;
@@ -169,7 +174,7 @@ public final class JpegFrames {
         }, "cameragate-converter");
         converter.setDaemon(true);
         converter.start();
-        for (int i = 0; i < MAX_FACES; i++) {
+        for (int i = 0; i < MAX_FACES_HARD; i++) {
             faceBoxes[i] = new Rect();
             boxes0[i] = new Rect();
             boxes90[i] = new Rect();
@@ -189,6 +194,25 @@ public final class JpegFrames {
         this.faceDetectEnabled = enabled;
         if (!enabled) {
             faceCount = 0;
+        }
+    }
+
+    /**
+     * Applies the tunable detection parameters from Settings (clamped):
+     * max faces, finest scan divisor (4..1), scan throttle ms, contrast
+     * gain (1.0 = off) and the full-res deep-scan probe.
+     */
+    public void applyFaceSettings(int maxFaces, int finestDiv,
+                                  int scanMs, float contrast,
+                                  boolean deepScan) {
+        faceMaxFaces = maxFaces < 1 ? 1 : (maxFaces > MAX_FACES_HARD
+                ? MAX_FACES_HARD : maxFaces);
+        faceFinestDiv = finestDiv < 1 ? 1 : (finestDiv > 4 ? 4 : finestDiv);
+        faceScanMs = scanMs < 60 ? 60 : (scanMs > 2000 ? 2000 : scanMs);
+        faceContrast = contrast < 1f ? 1f : (contrast > 2f ? 2f : contrast);
+        faceDeepScan = deepScan;
+        if (faceCount > faceMaxFaces) {
+            faceCount = faceMaxFaces;
         }
     }
 
@@ -477,57 +501,40 @@ public final class JpegFrames {
      * full-resolution boxes. The legacy Camera API stream is never rotated,
      * so a person can appear sideways: orientations 0 and 90 are scanned on
      * alternating slots, and the freshest orientation that found faces
-     * wins. Scans at ~1/3 scale so the old Neven detector (it needs >= 20px
-     * of eye distance in the analyzed image) works for faces that are
-     * merely close, not huge. Throttled so the oldest phones never burn a
-     * full core; between runs, the last boxes keep being drawn.
+     * wins. Scans adapt between 1/4 and the user's finest scale (1/2 by
+     * default) so the old Neven detector (it needs >= 20px of eye distance
+     * in the analyzed image) works for faces that are merely close, not
+     * huge. Throttled so the oldest phones never burn a full core; between
+     * runs, the last boxes keep being drawn.
      */
     private void detectFacesIn(Bitmap full) {
         long now = SystemClock.uptimeMillis();
-        if (now - lastDetectAt < DETECT_INTERVAL_MS) {
+        if (now - lastDetectAt < detectIntervalMs) {
             return;
+        }
+        // settle the throttle: settings are applied live, not only on start
+        float interval = detectIntervalMs;
+        long want = faceScanMs;
+        if (interval != want) {
+            detectIntervalMs = want;
         }
         lastDetectAt = now;
         // even dimensions: the native FFT detector requires an even width
-        int div = escLevel == 0 ? 4 : (escLevel == 1 ? 3 : 2);
+        int maxLevel = faceFinestDiv == 1 ? 3
+                : (faceFinestDiv == 2 ? 2 : (faceFinestDiv == 3 ? 1 : 0));
+        maxLevel = Math.min(3, maxLevel + (faceDeepScan ? 1 : 0));
+        int div = escLevel == 0 ? 4 : (escLevel == 1 ? 3
+                : (escLevel == 2 ? 2 : 1));
         int dw = Math.max(96, width / div) & ~1;
         int dh = Math.max(96, height * dw / width) & ~1;
         try {
-            if (bmp0 == null || dbW != dw || dbH != dh) {
-                if (bmp0 != null) {
-                    bmp0.recycle();
-                    bmp90.recycle();
-                }
-                dbW = dw;
-                dbH = dh;
-                bmp0 = Bitmap.createBitmap(dw, dh, Bitmap.Config.RGB_565);
-                bmp90 = Bitmap.createBitmap(dh, dw, Bitmap.Config.RGB_565);
-                // WARNING: Android's actual framework constructor signature
-                // is FaceDetector(width, height, maxFaces), not the
-                // (maxFaces, width, height) shown in some API docs. All
-                // three params are int, so a swapped call compiles fine but
-                // throws "bitmap size doesn't match initialization" at
-                // runtime (observed on Android 4.3). The face width must
-                // also be even.
-                detector0 = new FaceDetector(dw, dh, MAX_FACES);
-                detector90 = new FaceDetector(dh, dw, MAX_FACES);
-                Log.i(TAG, "detector init: frame=" + width + "x" + height
-                        + " pass0=" + dw + "x" + dh
-                        + " pass90=" + dh + "x" + dw);
-                float k = width > 0 ? (float) dw / width : 1f;
-                map0.setScale(k, k);
-                map0.invert(inv0);
-                // 90-degree CW pixel rotation of a WxH source into an HxW
-                // target: (X, Y) -> (H - 1 - Y, X), then scaled by k.
-                map90.setValues(new float[]{0, -1, height - 1,
-                        1, 0, 0, 0, 0, 1});
-                map90.postScale(k, k);
-                map90.invert(inv90);
-            }
             boolean tracking = faceCount > 0 && emptyRuns < 3;
-            boolean fine = escLevel >= 2 && emptyRuns < 12;
-            boolean fullProbe = escLevel == 2 && emptyRuns >= 12
-                    && (probeTick++ & 7) == 0;
+            // search mode (both orientations) runs at the user's finest
+            // level; coarse levels only alternate to save CPU
+            boolean fine = escLevel >= maxLevel - (faceDeepScan ? 1 : 0)
+                    && emptyRuns < 12;
+            boolean fullProbe = faceDeepScan && escLevel == maxLevel
+                    && emptyRuns >= 12 && (probeTick++ & 7) == 0;
             if (fullProbe) {
                 // nothing found for a while: occasionally re-acquire at
                 // full resolution to catch smaller faces
@@ -550,8 +557,8 @@ public final class JpegFrames {
                 // throws "bitmap size doesn't match initialization" at
                 // runtime (observed on Android 4.3). The face width must
                 // also be even.
-                detector0 = new FaceDetector(dw, dh, MAX_FACES);
-                detector90 = new FaceDetector(dh, dw, MAX_FACES);
+                detector0 = new FaceDetector(dw, dh, faceMaxFaces);
+                detector90 = new FaceDetector(dh, dw, faceMaxFaces);
                 Log.i(TAG, "detector init: frame=" + width + "x" + height
                         + " pass0=" + dw + "x" + dh
                         + " pass90=" + dh + "x" + dw);
@@ -567,11 +574,11 @@ public final class JpegFrames {
             }
             ensureDetectPaint();
             passCostStart = SystemClock.uptimeMillis();
-            if (fine && !fullProbe && !tracking) {
-                // search mode: both orientations every slot, no 50% miss
-                // window while the user holds a photo at unknown rotation.
-                // (when tracking a face we alternate to keep the stream
-                // frames flowing - cached boxes stay on screen regardless)
+            boolean hunting = faceCount > 0 && faceCount < faceMaxFaces;
+            if ((fine && !fullProbe && !tracking) || hunting) {
+                // search/hunt mode: both orientations every slot so a face
+                // only the other rotation would catch is not missed while
+                // we still have room for more boxes
                 int c0 = runPass(detector0, bmp0, full, map0, inv0, boxes0);
                 int c90 = runPass(detector90, bmp90, full, map90, inv90, boxes90);
                 count0 = c0;
@@ -592,14 +599,27 @@ public final class JpegFrames {
                     slot0 = slotTick;
                 }
             }
-            // draw the freshest orientation that actually found faces
+            // merge both orientations' fresh boxes instead of winner-take-all:
+            // a face only the 90deg pass caught must not vanish just because
+            // the 0deg pass found nothing (or vice versa) - that is what made
+            // a second face in a different pose drop out
             int shownC0 = (count0 > 0 && slotTick - slot0 <= 3) ? count0 : 0;
             int shownC90 = (count90 > 0 && slotTick - slot90 <= 3)
                     ? count90 : 0;
-            Rect[] src = shownC0 >= shownC90 ? boxes0 : boxes90;
-            int count = shownC0 >= shownC90 ? shownC0 : shownC90;
-            for (int i = 0; i < count; i++) {
-                faceBoxes[i].set(src[i]);
+            int count = 0;
+            Rect[] a = boxes0;
+            Rect[] b = boxes90;
+            int na = shownC0;
+            int nb = shownC90;
+            for (int s = 0; s < na + nb && count < faceMaxFaces; s++) {
+                Rect r = s < na ? a[s] : b[s - na];
+                boolean dup = false;
+                for (int i = 0; i < count && !dup; i++) {
+                    dup = overlaps(r, faceBoxes[i]);
+                }
+                if (!dup) {
+                    faceBoxes[count++].set(r);
+                }
             }
             faceCount = count;
             if (count > 0) {
@@ -612,7 +632,7 @@ public final class JpegFrames {
                 }
             } else {
                 foundRuns = 0;
-                if (++emptyRuns >= 4 && escLevel < 2) {
+                if (++emptyRuns >= 4 && escLevel < maxLevel) {
                     // nothing found: scan progressively finer
                     escLevel++;
                     emptyRuns = 0;
@@ -633,6 +653,25 @@ public final class JpegFrames {
             Log.w(TAG, "face detection failed", e);
             faceCount = 0;
         }
+    }
+
+    /**
+     * True when a and b cover mostly the same region - the same face seen
+     * by both the 0deg and the 90deg pass, which should be counted once.
+     */
+    private boolean overlaps(Rect a, Rect b) {
+        int iw = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        if (iw <= 0) {
+            return false;
+        }
+        int ih = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (ih <= 0) {
+            return false;
+        }
+        int inter = iw * ih;
+        int area = Math.min(a.width() * a.height(),
+                b.width() * b.height());
+        return area > 0 && inter * 2 > area;
     }
 
     /**
@@ -660,7 +699,7 @@ public final class JpegFrames {
         if (dt > passCostMax) {
             passCostMax = dt;
         }
-        n = Math.min(n, MAX_FACES);
+        n = Math.min(n, faceMaxFaces);
         int count = 0;
         for (int i = 0; i < n; i++) {
             FaceDetector.Face f = detectFaces[i];
@@ -753,14 +792,16 @@ public final class JpegFrames {
     }
 
     private void ensureDetectPaint() {
-        if (!detectPaintReady) {
+        if (paintContrast != faceContrast) {
+            float g = faceContrast;
+            float o = (1f - g) * 255f / 2f * 2f / g; // keep mid-brightness
             detectPaint.setColorFilter(new ColorMatrixColorFilter(
                     new float[]{
-                            1.35f, 0, 0, 0, -25,
-                            0, 1.35f, 0, 0, -25,
-                            0, 0, 1.35f, 0, -25,
+                            g, 0, 0, 0, o,
+                            0, g, 0, 0, o,
+                            0, 0, g, 0, o,
                             0, 0, 0, 1, 0}));
-            detectPaintReady = true;
+            paintContrast = faceContrast;
         }
     }
 

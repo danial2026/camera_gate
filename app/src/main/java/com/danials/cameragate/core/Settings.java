@@ -106,6 +106,76 @@ public final class Settings {
         prefs().edit().putBoolean("faceDetect", enabled).apply();
     }
 
+    // ------------------------------------------------ face detection system
+
+    /** Maximum faces the scan tries to find at once (1..8). Default 4. */
+    public int getFaceMaxFaces() {
+        int v = prefs().getInt("faceMaxFaces", 4);
+        return v < 1 ? 1 : (v > 8 ? 8 : v);
+    }
+
+    public void setFaceMaxFaces(int maxFaces) {
+        int v = maxFaces < 1 ? 1 : (maxFaces > 8 ? 8 : maxFaces);
+        prefs().edit().putInt("faceMaxFaces", v).apply();
+    }
+
+    /**
+     * Finest scan scale as a divisor (4 = 1/4 res, 3 = 1/3, 2 = 1/2,
+     * 1 = full res). Smaller divisor = smaller faces detected = slower.
+     * Default 2 (1/2).
+     */
+    public int getFaceFinestDiv() {
+        int v = prefs().getInt("faceFinestDiv", 2);
+        return v < 1 ? 1 : (v > 4 ? 4 : v);
+    }
+
+    public void setFaceFinestDiv(int div) {
+        int v = div < 1 ? 1 : (div > 4 ? 4 : div);
+        prefs().edit().putInt("faceFinestDiv", v).apply();
+    }
+
+    /** Detection throttle in ms between scans (60..2000). Default 120. */
+    public int getFaceScanMs() {
+        int v = prefs().getInt("faceScanMs", 120);
+        return v < 60 ? 60 : (v > 2000 ? 2000 : v);
+    }
+
+    public void setFaceScanMs(int ms) {
+        int v = ms < 60 ? 60 : (ms > 2000 ? 2000 : ms);
+        prefs().edit().putInt("faceScanMs", v).apply();
+    }
+
+    /** Analysis contrast boost (1.0 = off .. 2.0). Default 1.35. */
+    public float getFaceContrast() {
+        float v = prefs().getFloat("faceContrast", 1.35f);
+        return v < 1f ? 1f : (v > 2f ? 2f : v);
+    }
+
+    public void setFaceContrast(float gain) {
+        float v = gain < 1f ? 1f : (gain > 2f ? 2f : gain);
+        prefs().edit().putFloat("faceContrast", v).apply();
+    }
+
+    /** Full-resolution re-acquire probe while nothing is found. Default on. */
+    public boolean getFaceDeepScan() {
+        return prefs().getBoolean("faceDeepScan", true);
+    }
+
+    public void setFaceDeepScan(boolean enabled) {
+        prefs().edit().putBoolean("faceDeepScan", enabled).apply();
+    }
+
+    /** Restores every face detection parameter to its default. */
+    public void resetFaceDefaults() {
+        prefs().edit()
+                .remove("faceMaxFaces")
+                .remove("faceFinestDiv")
+                .remove("faceScanMs")
+                .remove("faceContrast")
+                .remove("faceDeepScan")
+                .apply();
+    }
+
     /** Stream frame-rate cap in fps (0 = uncapped). */
     public int getFps() {
         int fps = prefs().getInt("fps", 15);

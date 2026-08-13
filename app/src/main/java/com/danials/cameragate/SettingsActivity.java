@@ -1,7 +1,9 @@
 package com.danials.cameragate;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.hardware.Camera;
 import android.net.Uri;
@@ -11,6 +13,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.Toast;
@@ -39,11 +42,18 @@ public class SettingsActivity extends Activity {
     private Spinner languageSpinner;
     private CheckBox osdCheck;
     private CheckBox faceCheck;
+    private View faceSection;
+    private EditText maxFacesInput;
+    private EditText scanMsInput;
+    private EditText contrastInput;
+    private Spinner finenessSpinner;
+    private CheckBox deepCheck;
 
     private final List<String> addressValues = new ArrayList<String>();
     private final List<String> sizeValues = new ArrayList<String>();
     private final List<Integer> fpsValues = new ArrayList<Integer>();
     private final List<String> languageValues = new ArrayList<String>();
+    private final List<Integer> finenessValues = new ArrayList<Integer>();
     private String attachedLang;
 
     @Override
@@ -80,17 +90,39 @@ public class SettingsActivity extends Activity {
         languageSpinner = (Spinner) findViewById(R.id.spinner_language);
         osdCheck = (CheckBox) findViewById(R.id.check_osd);
         faceCheck = (CheckBox) findViewById(R.id.check_faces);
+        faceSection = findViewById(R.id.face_section);
+        maxFacesInput = (EditText) findViewById(R.id.input_maxfaces);
+        scanMsInput = (EditText) findViewById(R.id.input_scanms);
+        contrastInput = (EditText) findViewById(R.id.input_contrast);
+        finenessSpinner = (Spinner) findViewById(R.id.spinner_fineness);
+        deepCheck = (CheckBox) findViewById(R.id.check_deep);
 
         portInput.setText(String.valueOf(settings.getPort()));
         tokenInput.setText(settings.getToken());
         cameraInput.setText(String.valueOf(settings.getCameraId()));
         osdCheck.setChecked(settings.getOsdEnabled());
         faceCheck.setChecked(settings.getFaceDetectEnabled());
+        populateFaceControls(settings);
 
         setupAddressSpinner(settings);
         setupSizeSpinner(settings, gate);
         setupFpsSpinner(settings);
         setupLanguageSpinner(settings);
+        setupFinenessSpinner(settings);
+
+        // the detection system section only makes sense when the feature
+        // is on; keep it hidden otherwise to keep the old phones snappy
+        faceSection.setVisibility(faceCheck.isChecked() ? View.VISIBLE
+                : View.GONE);
+        faceCheck.setOnCheckedChangeListener(
+                new CompoundButton.OnCheckedChangeListener() {
+                    @Override
+                    public void onCheckedChanged(CompoundButton b,
+                                                 boolean checked) {
+                        faceSection.setVisibility(checked ? View.VISIBLE
+                                : View.GONE);
+                    }
+                });
 
         Button save = (Button) findViewById(R.id.btn_save);
         save.setOnClickListener(new View.OnClickListener() {
@@ -116,6 +148,60 @@ public class SettingsActivity extends Activity {
                                 "https://github.com/danial2026/camera_gate")));
                     }
                 });
+        findViewById(R.id.btn_reset_faces).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        confirmFaceReset(settings);
+                    }
+                });
+    }
+
+    private void setupFinenessSpinner(Settings settings) {
+        List<String> labels = new ArrayList<String>();
+        finenessValues.clear();
+
+        finenessValues.add(4);
+        labels.add(getString(R.string.fineness_14));
+        finenessValues.add(3);
+        labels.add(getString(R.string.fineness_13));
+        finenessValues.add(2);
+        labels.add(getString(R.string.fineness_12));
+        finenessValues.add(1);
+        labels.add(getString(R.string.fineness_full));
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
+                R.layout.spinner_item, labels);
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        finenessSpinner.setAdapter(adapter);
+
+        int saved = settings.getFaceFinestDiv();
+        int idx = finenessValues.indexOf(saved);
+        finenessSpinner.setSelection(Math.max(0, idx));
+    }
+
+    private void populateFaceControls(Settings settings) {
+        maxFacesInput.setText(String.valueOf(settings.getFaceMaxFaces()));
+        scanMsInput.setText(String.valueOf(settings.getFaceScanMs()));
+        contrastInput.setText(String.valueOf(settings.getFaceContrast()));
+        deepCheck.setChecked(settings.getFaceDeepScan());
+    }
+
+    private void confirmFaceReset(final Settings settings) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.face_reset_title)
+                .setMessage(R.string.face_reset_message)
+                .setPositiveButton(R.string.face_reset_ok,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int w) {
+                                settings.resetFaceDefaults();
+                                populateFaceControls(settings);
+                                setupFinenessSpinner(settings);
+                            }
+                        })
+                .setNegativeButton(R.string.face_reset_cancel, null)
+                .show();
     }
 
     private void setupAddressSpinner(Settings settings) {
@@ -317,6 +403,15 @@ public class SettingsActivity extends Activity {
             settings.setFps(fpsValues.get(fIdx < 0 ? 0 : fIdx));
             settings.setOsdEnabled(osdCheck.isChecked());
             settings.setFaceDetectEnabled(faceCheck.isChecked());
+            int mIdx = finenessSpinner.getSelectedItemPosition();
+            settings.setFaceFinestDiv(finenessValues.get(mIdx < 0 ? 2 : mIdx));
+            settings.setFaceMaxFaces(Integer.parseInt(
+                    maxFacesInput.getText().toString().trim()));
+            settings.setFaceScanMs(Integer.parseInt(
+                    scanMsInput.getText().toString().trim()));
+            settings.setFaceContrast(Float.parseFloat(
+                    contrastInput.getText().toString().trim()));
+            settings.setFaceDeepScan(deepCheck.isChecked());
 
             if (gate.isRunning()) {
                 Toast.makeText(this, R.string.settings_restart_needed,
