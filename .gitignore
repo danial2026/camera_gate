@@ -19,3 +19,5 @@ screenshot/
 .DS_Store
 
 .freebuff/
+
+/ws-client/frames/
