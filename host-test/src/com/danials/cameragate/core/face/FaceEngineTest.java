@@ -50,6 +50,49 @@ public final class FaceEngineTest {
 
     // ------------------------------------------------------------ integrals
 
+    /**
+     * Independent verbatim translation of OpenCV's integral_tilted_()
+     * (cn = 1, no SIMD) with explicit 0-based indices, kept structurally
+     * different from the engine's computeTilted so a transcription error
+     * in one is caught by the other.
+     */
+    private static int[] opencvTiltedRef(byte[] gray, int w, int h) {
+        int stride = w + 1;
+        int[] t = new int[(h + 1) * stride];
+        int[] buf = new int[w + 1];
+        // row 1 of the buffer: raw source row 0 at cols 1..w
+        for (int x = 0; x < w; x++) {
+            int v = gray[x] & 0xFF;
+            buf[x] = v;
+            t[stride + 1 + x] = v;
+        }
+        if (w == 1) {
+            buf[1] = 0;
+        }
+        for (int y = 1; y < h; y++) {
+            int base = (y + 1) * stride + 1; // buffer row y+1, col 1
+            int prev = y * stride + 1;       // buffer row y, col 1
+            int t0 = gray[y * w] & 0xFF;
+            t[base - 1] = t[prev - 1];       // col 0 border: copy from above (zero)
+            t[base] = t[prev] + t0 + buf[1];
+            for (int x = 1; x < w - 1; x++) { // cols 2..w-1
+                int t1 = buf[x];
+                buf[x - 1] = t1 + t0;
+                t0 = gray[y * w + x] & 0xFF;
+                t[base + x] = t1 + buf[x + 1] + t0 + t[prev + x - 1];
+            }
+            if (w > 1) {                     // col w
+                int x = w - 1;
+                int t1 = buf[x];
+                buf[x - 1] = t1 + t0;
+                t0 = gray[y * w + x] & 0xFF;
+                t[base + x] = t0 + t1 + t[prev + x - 1];
+                buf[x] = t0;
+            }
+        }
+        return t;
+    }
+
     private static void testIntegrals() {
         System.out.println("== integrals ==");
         Random rnd = new Random(42);
@@ -84,13 +127,31 @@ public final class FaceEngineTest {
                     + (ii.sqsum[r[1] * ii.stride + r[0]] & 0xFFFFFFFFL);
             check(sqGot == sqWant, "sqsum wrap-read " + r[1] + "," + r[0]);
         }
-        // tilted rect: brute-force the parallelogram (rotated box u/v) sum
-        int tx = 6, ty = 5, tw = 9, th = 7;
-        check(ii.tiltedRectSum(tx, ty, tw, th) == ii.tiltedRectSumRef(
-                g, tx, ty, tw, th), "tiltedRectSum vs parallelogram brute force");
-        int tx2 = 8, ty2 = 10, tw2 = 4, th2 = 4;
-        check(ii.tiltedRectSum(tx2, ty2, tw2, th2) == ii.tiltedRectSumRef(
-                g, tx2, ty2, tw2, th2), "even tilted rect matches ref");
+        // tilted integral: OpenCV's tilted features are NOT clean
+        // parallelograms - the integral is built by a dedicated recursion
+        // (integral_tilted_) and read out through the CV_TILTED_PTRS
+        // corners - so the oracle is an independent verbatim translation
+        // of that recursion compared against the whole table, plus golden
+        // readouts on a tiny labeled image.
+        int[] refT = opencvTiltedRef(g, w, h);
+        boolean tblOk = true;
+        for (int i = 0; i < refT.length; i++) {
+            if (ii.tilted[i] != refT[i]) {
+                tblOk = false;
+            }
+        }
+        check(tblOk, "tilted table matches integral_tilted_ reference");
+        byte[] tiny = new byte[16];
+        for (int j = 0; j < 4; j++) {
+            for (int i = 0; i < 4; i++) {
+                tiny[j * 4 + i] = (byte) (10 * i + j + 1);
+            }
+        }
+        IntegralImage tii = IntegralImage.compute(tiny, 4, 4, false, true);
+        check(tii.tiltedRectSum(1, 1, 1, 1) == 6, "tilted 1x1 golden at (1,1)");
+        check(tii.tiltedRectSum(1, 0, 1, 1) == 3, "tilted 1x1 golden at (1,0)");
+        check(tii.tiltedRectSum(2, 1, 1, 1) == 25, "tilted 1x1 golden at (2,1)");
+        check(tii.tiltedRectSum(1, 2, 1, 1) == 21, "tilted 1x1 golden at (1,2)");
     }
 
     // ------------------------------------------------- micro-cascades
@@ -117,16 +178,28 @@ public final class FaceEngineTest {
 
     private static void testHaarMicro() {
         System.out.println("== HAAR micro-cascade ==");
-        byte[] g = gray(40, 40, (x, y) -> x); // horizontal ramp 0..39
+        // Steep x-ramp so the variance gate (normrect 18x18) passes; every
+        // analysis window then has the same normalized response scale, and
+        // feature sums are exact integers. The thresholds below are applied
+        // AFTER the OpenCV variance normalization (fv * 1/sqrt(nf)):
+        //   window sums: left-half / right-half
+        //     (0,0)  : 6300 / 20300
+        //     (10,0) : 20300 / 34300
+        //     (0,20) : 6300 / 20300
+        //   normalized (fv*inv): stage 1 in {0.535, 1.725}, stage 2 in
+        //   {1.725, 2.915} - thresholds 0.5 / 1.0 sit between the values,
+        //   so every window deterministically takes the right-branch leaf.
+        byte[] g = gray(40, 40, (x, y) -> 7 * x);
         IntegralImage ig = IntegralImage.compute(g, 40, 40, true, false);
         // accept path: stage sums are always the right-branch leaves
-        Cascade accept = rampCascade(1.0f, 0.5f, 1.5f, 0.5f, 1f, 2f);
+        Cascade accept = rampCascade(0.5f, 0.5f, 1.5f, 1.0f, 1f, 2f);
         accept.prepareOffsets(ig.stride);
         check(accept.run(ig, 0, 0) == 1, "ramp window accepted at (0,0)");
         check(accept.run(ig, 10, 0) == 1, "ramp window accepted at (10,0)");
         check(accept.run(ig, 0, 20) == 1, "ramp window accepted at (0,20)");
-        // reject path: stage 2 leaves are always below its threshold
-        Cascade reject = rampCascade(1.0f, 0.5f, 1.5f, -1.5f, -2f, -3f);
+        // reject path: stage 2 always takes its right leaf (-3), which is
+        // below the stage-2 threshold
+        Cascade reject = rampCascade(0.5f, 0.5f, 1.5f, -1.5f, -2f, -3f);
         reject.prepareOffsets(ig.stride);
         check(reject.run(ig, 0, 0) == -2, "rejected at stage 2 (code -2)");
         // variance gate: constant window is flat
@@ -168,6 +241,25 @@ public final class FaceEngineTest {
         IntegralImage ig2 = IntegralImage.compute(check2, 40, 40, false, false);
         c2.prepareOffsets(ig2.stride);
         check(c2.run(ig2, 0, 0) == -1, "checkerboard LBP rejected (pattern 0)");
+        // two stages over the same feature: OpenCV's predictCategoricalStump
+        // indexes subsets per-stage (by wi), not by the global tree index, so
+        // stage 2 must consult its own 8 words even though this is tree 1
+        int[] rects2 = {0, 0, 4, 4, 1, 0, 0, 4, 4, 1};
+        int[] rc2 = {1, 1};
+        boolean[] tilt2 = {false, false};
+        int[] nodes2 = {-1, 1, 0, 0, -1, 1, 1, 0};
+        int[] tc2 = {1, 1};
+        float[] leaves2 = {1.0f, -1.0f, 1.0f, -1.0f};
+        int[] subs3 = new int[16];
+        subs3[7] = 1 << 31; // pattern 255 selectable only in stage 1's subset
+        float[] thr2 = {0.5f, 0.5f};
+        int[] first2 = {0, 1};
+        int[] trees2 = {1, 1};
+        Cascade c3 = new Cascade(true, true, 20, 20, ncat, first2, trees2, thr2,
+                tc2, nodes2, leaves2, subs3, rects2, rc2, tilt2);
+        IntegralImage ig3 = IntegralImage.compute(dark, 40, 40, false, false);
+        c3.prepareOffsets(ig3.stride);
+        check(c3.run(ig3, 0, 0) == 1, "2-stage LBP: subsets are per-stage");
     }
 
     // --------------------------------------------------- real cascade
@@ -223,7 +315,9 @@ public final class FaceEngineTest {
         boolean allRectsOk = true;
         for (int f = 0; f < c.featureCount; f++) {
             int rc = c.featRectCount[f];
-            check(rc >= 1 && rc <= 3, "feature " + f + " rects in [1..3]");
+            if (rc < 1 || rc > 3) {
+                allRectsOk = false;
+            }
             rcTotal += rc;
             for (int r = 0; r < rc; r++) {
                 int base = f * 5 + r * 5;

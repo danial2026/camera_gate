@@ -124,6 +124,7 @@ public final class IntegralImage {
                 buf[w - 2] = t1 + t0;
                 t0 = gray[g + w - 1] & 0xFF;
                 tilted[rowBase + w] = t0 + t1 + tilted[prevBase + w - 1];
+                buf[w - 1] = t0;
             }
         }
     }
@@ -145,26 +146,5 @@ public final class IntegralImage {
         int p2 = t[(y + rw) * stride + x + rw];
         int p3 = t[(y + rw + rh) * stride + x + rw - rh];
         return p0 - p1 - p2 + p3;
-    }
-
-    /**
-     * Brute-force reference for the tilted rectangle: the parallelogram
-     * spanned by the diagonals (rw, rw) and (-rh, rh) from (x, y) — in the
-     * rotated coordinates u = i + j, v = i - j that is the half-open box
-     * [x+y, x+y+2rw) x [x-y-2rh, x-y). Used by the host tests.
-     */
-    long tiltedRectSumRef(byte[] gray, int x, int y, int rw, int rh) {
-        long s = 0;
-        for (int j = 0; j < h; j++) {
-            for (int i = 0; i < w; i++) {
-                int u = i + j;
-                int v = i - j;
-                if (u >= x + y && u < x + y + 2 * rw
-                        && v >= x - y - 2 * rh && v < x - y) {
-                    s += gray[j * w + i] & 0xFF;
-                }
-            }
-        }
-        return s;
     }
 }

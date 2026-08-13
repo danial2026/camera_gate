@@ -371,7 +371,7 @@ public final class Cascade {
                         - sum[base + ofs[f0 + 8]] + sum[base + ofs[f0 + 9]] >= cval) {
                     pat |= 1;
                 }
-                int word = subsets[tree * ss + (pat >> 5)];
+                int word = subsets[(tree - stageFirst[si]) * ss + (pat >> 5)];
                 int li = tree * 2;
                 stageSum += (word & (1 << (pat & 31))) != 0
                         ? leaves[li] : leaves[li + 1];
