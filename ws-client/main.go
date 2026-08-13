@@ -200,8 +200,8 @@ func streamLoop(direct bool, url, token, outDir string,
 				break
 			}
 			if outDir != "" {
-				name := filepath.Join(outDir, fmt.Sprintf("frame_%08d.jpg",
-					atomic.AddUint64(frames, 1)))
+				name := filepath.Join(outDir, fmt.Sprintf("frame_%s.jpg",
+					time.Now().Format("20060102_150405.000000000")))
 				if werr := os.WriteFile(name, payload, 0o644); werr != nil {
 					log.Printf("write %s: %v", name, werr)
 				}
