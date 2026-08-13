@@ -93,29 +93,37 @@ public final class CameraSource {
             try {
                 camera = Camera.open(id);
                 cameraId = id;
-            } catch (RuntimeException e) {
-                Log.e(TAG, "Camera.open(" + id + ") failed", e);
-                camera = null;
-                return;
-            }
-            Camera.CameraInfo info = new Camera.CameraInfo();
-            Camera.getCameraInfo(id, info);
-            facing = info.facing;
-            displayOrientation = computeDisplayOrientation(info);
-            camera.setDisplayOrientation(displayOrientation);
+                Camera.CameraInfo info = new Camera.CameraInfo();
+                Camera.getCameraInfo(id, info);
+                facing = info.facing;
+                displayOrientation = computeDisplayOrientation(info);
+                camera.setDisplayOrientation(displayOrientation);
 
-            Camera.Size size = pickPreviewSize(
-                    camera.getParameters(), maxWidth, reqW, reqH);
-            previewWidth = size.width;
-            previewHeight = size.height;
-            Camera.Parameters params = camera.getParameters();
-            params.setPreviewSize(previewWidth, previewHeight);
-            params.setPreviewFormat(android.graphics.ImageFormat.NV21);
-            camera.setParameters(params);
-            frames.start(previewWidth, previewHeight);
-            attachPreviewTarget();
-            startPreviewLocked();
-            state = STATE_STREAMING;
+                Camera.Size size = pickPreviewSize(
+                        camera.getParameters(), maxWidth, reqW, reqH);
+                previewWidth = size.width;
+                previewHeight = size.height;
+                Camera.Parameters params = camera.getParameters();
+                params.setPreviewSize(previewWidth, previewHeight);
+                params.setPreviewFormat(android.graphics.ImageFormat.NV21);
+                camera.setParameters(params);
+                frames.start(previewWidth, previewHeight);
+                attachPreviewTarget();
+                startPreviewLocked();
+                state = STATE_STREAMING;
+            } catch (Exception e) {
+                // Never let a camera HAL error (unsupported size/format,
+                // busy hardware, driver quirks on modern devices) crash the
+                // process: leave the source closed and let the caller
+                // report a graceful "server start failed".
+                Log.e(TAG, "camera open/preview failed (id=" + id + ")", e);
+                try {
+                    closeLocked();
+                } catch (RuntimeException ignored) {
+                }
+                cameraId = -1;
+                facing = -1;
+            }
         }
     }
 

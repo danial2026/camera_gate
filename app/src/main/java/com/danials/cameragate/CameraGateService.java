@@ -103,7 +103,11 @@ public class CameraGateService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        scheduleWatchdog();
+        try {
+            scheduleWatchdog();
+        } catch (Exception e) {
+            Log.e(TAG, "watchdog scheduling failed", e);
+        }
     }
 
     @Override
@@ -113,31 +117,59 @@ public class CameraGateService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            releaseWakeLock();
-            stopForegroundCompat();
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        startInForeground();
-        CameraGate gate = CameraGateApp.gate();
-        if (!gate.isRunning()) {
-            if (!gate.start()) {
-                Log.e(TAG, "server failed to start");
+        try {
+            if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+                releaseWakeLock();
+                stopForegroundCompat();
                 stopSelf();
                 return START_NOT_STICKY;
             }
-        }
-        acquireWakeLock();
-        handler.removeCallbacks(wakeLockRefresher);
-        handler.postDelayed(wakeLockRefresher, WAKELOCK_TIMEOUT_MS / 2);
 
-        String action = intent == null ? null : intent.getAction();
-        if (ACTION_START.equals(action) || ACTION_RESTART.equals(action)) {
-            Log.i(TAG, "service started (" + action + ")");
+            // System rejection (background start, exhausted dataSync budget)
+            // surfaces here; without the guard the process would crash.
+            if (!startInForeground()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            CameraGate gate = CameraGateApp.gate();
+            if (!gate.isRunning()) {
+                if (!gate.start()) {
+                    Log.e(TAG, "server failed to start");
+                    stopSelf();
+                    return START_NOT_STICKY;
+                }
+            }
+            acquireWakeLock();
+            handler.removeCallbacks(wakeLockRefresher);
+            handler.postDelayed(wakeLockRefresher, WAKELOCK_TIMEOUT_MS / 2);
+
+            String action = intent == null ? null : intent.getAction();
+            if (ACTION_START.equals(action) || ACTION_RESTART.equals(action)) {
+                Log.i(TAG, "service started (" + action + ")");
+            }
+            return START_STICKY;
+        } catch (Exception e) {
+            Log.e(TAG, "onStartCommand failed", e);
+            stopSelf();
+            return START_NOT_STICKY;
         }
-        return START_STICKY;
+    }
+
+    /**
+     * Android 15+ caps dataSync foreground services at 6h per 24h while the
+     * app is in the background. When the budget runs dry the system calls
+     * this; failing to stop quickly makes the system crash the app, so shut
+     * the server down cleanly instead (the user can restart it from the
+     * foreground, which resets the budget).
+     */
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        Log.w(TAG, "dataSync foreground service timed out; stopping server");
+        try {
+            CameraGateApp.gate().stop();
+        } catch (Exception ignored) {
+        }
+        stopSelf();
     }
 
     /**
@@ -147,19 +179,27 @@ public class CameraGateService extends Service {
      */
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        Intent restart = new Intent(this, CameraGateService.class)
-                .setAction(ACTION_RESTART);
-        PendingIntent pi = pendingIntent(restart, RESTART_REQUEST_CODE);
-        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-        am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                SystemClock.elapsedRealtime() + 1000, pi);
+        try {
+            Intent restart = new Intent(this, CameraGateService.class)
+                    .setAction(ACTION_RESTART);
+            PendingIntent pi = pendingIntent(restart, RESTART_REQUEST_CODE);
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 1000, pi);
+        } catch (Exception e) {
+            Log.e(TAG, "restart scheduling failed", e);
+        }
         super.onTaskRemoved(rootIntent);
     }
 
     @Override
     public void onDestroy() {
-        releaseWakeLock();
-        CameraGateApp.gate().stop();
+        try {
+            releaseWakeLock();
+            CameraGateApp.gate().stop();
+        } catch (Exception e) {
+            Log.w(TAG, "teardown failed", e);
+        }
         super.onDestroy();
     }
 
@@ -189,19 +229,36 @@ public class CameraGateService extends Service {
         return CameraGateService.pendingIntent(this, intent, requestCode);
     }
 
-    private void startInForeground() {
-        createChannelIfNeeded();
-        // Fresh localization each build: <7.x configuration changes can flip
-        // the process resources back to the system locale in between.
-        Context ui = LocaleHelper.apply(this, LocaleHelper.current(this));
-        Notification n = new Notification.Builder(this)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(ui.getString(R.string.service_notification_title))
-                .setContentText(ui.getString(R.string.service_notification_text))
-                .setContentIntent(serviceIntent())
-                .setOngoing(true)
-                .build();
-        startForeground(NOTIFICATION_ID, n);
+    /** Promotes the service to foreground; false if the system refused. */
+    private boolean startInForeground() {
+        try {
+            createChannelIfNeeded();
+            // Fresh localization each build: <7.x configuration changes can flip
+            // the process resources back to the system locale in between.
+            Context ui = LocaleHelper.apply(this, LocaleHelper.current(this));
+            Notification.Builder b = new Notification.Builder(this)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(ui.getString(R.string.service_notification_title))
+                    .setContentText(ui.getString(R.string.service_notification_text))
+                    .setContentIntent(serviceIntent())
+                    .setOngoing(true);
+            // The notification MUST be attached to a channel on API 26+
+            // (setChannelId only exists there, so it is guarded for the
+            // Android 4.x targets). Without it, Android 16 rejects the
+            // startForeground call outright and kills the app with a
+            // CannotPostForegroundServiceNotificationException.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                b.setChannelId(CHANNEL_ID);
+            }
+            startForeground(NOTIFICATION_ID, b.build());
+            return true;
+        } catch (Exception e) {
+            // e.g. ForegroundServiceStartNotAllowedException (background
+            // start or the dataSync time budget is spent) - degrade to a
+            // plain service instead of crashing the app.
+            Log.e(TAG, "startForeground failed", e);
+            return false;
+        }
     }
 
     private PendingIntent serviceIntent() {

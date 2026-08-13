@@ -71,8 +71,9 @@ public class MainActivity extends Activity implements CameraGate.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        LocaleHelper.applyLayoutDirection(this,
-                findViewById(android.R.id.content));
+        View content = findViewById(android.R.id.content);
+        LocaleHelper.applyLayoutDirection(this, content);
+        UiInsets.apply(content);
 
         gate = CameraGateApp.gate();
         gate.addListener(this);

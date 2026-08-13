@@ -61,48 +61,60 @@ public final class CameraGate {
         if (running) {
             return true;
         }
-        int port = settings.getPort();
-        int[] size = settings.getPreviewSize();
-        camera = new CameraSource(frames);
-        camera.open(settings.getCameraId(), settings.getMaxPreviewWidth(),
-                size == null ? 0 : size[0], size == null ? 0 : size[1]);
-        if (!cameraOpen()) {
-            camera.release();
-            camera = null;
+        try {
+            int port = settings.getPort();
+            int[] size = settings.getPreviewSize();
+            camera = new CameraSource(frames);
+            camera.open(settings.getCameraId(), settings.getMaxPreviewWidth(),
+                    size == null ? 0 : size[0], size == null ? 0 : size[1]);
+            if (!cameraOpen()) {
+                camera.release();
+                camera = null;
+                notifyChanged();
+                return false;
+            }
+            frames.setOsdEnabled(settings.getOsdEnabled());
+            frames.setFaceDetection(settings.getFaceDetectEnabled());
+            frames.applyFaceSettings(settings.getFaceMaxFaces(),
+                    settings.getFaceFinestDiv(), settings.getFaceScanMs(),
+                    settings.getFaceContrast(), settings.getFaceDeepScan());
+            frames.setMaxFps(settings.getFps());
+            List<String> ips = ipAddresses();
+            frames.setOsdLabel(ips.isEmpty() ? null
+                    : ips.get(0) + ":" + settings.getPort());
+            http = new HttpServer(this);
+            if (!http.start(settings.getListenAddress(), port)) {
+                camera.release();
+                camera = null;
+                notifyChanged();
+                return false;
+            }
+            running = true;
+            Log.i(TAG, "CameraGate server running at "
+                    + primaryBaseUrl() + "/");
             notifyChanged();
+            return true;
+        } catch (Exception e) {
+            // Never let a start failure (camera HAL, bind, etc.) crash the
+            // process: clean up anything that was opened and report failure.
+            Log.e(TAG, "server start failed", e);
+            stop();
             return false;
         }
-        frames.setOsdEnabled(settings.getOsdEnabled());
-        frames.setFaceDetection(settings.getFaceDetectEnabled());
-        frames.applyFaceSettings(settings.getFaceMaxFaces(),
-                settings.getFaceFinestDiv(), settings.getFaceScanMs(),
-                settings.getFaceContrast(), settings.getFaceDeepScan());
-        frames.setMaxFps(settings.getFps());
-        List<String> ips = ipAddresses();
-        frames.setOsdLabel(ips.isEmpty() ? null
-                : ips.get(0) + ":" + settings.getPort());
-        http = new HttpServer(this);
-        if (!http.start(settings.getListenAddress(), port)) {
-            camera.release();
-            camera = null;
-            notifyChanged();
-            return false;
-        }
-        running = true;
-        Log.i(TAG, "CameraGate server running at "
-                + primaryBaseUrl() + "/");
-        notifyChanged();
-        return true;
     }
 
     public synchronized void stop() {
-        if (http != null) {
-            http.stop();
-            http = null;
-        }
-        if (camera != null) {
-            camera.release();
-            camera = null;
+        try {
+            if (http != null) {
+                http.stop();
+                http = null;
+            }
+            if (camera != null) {
+                camera.release();
+                camera = null;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "server stop failed", e);
         }
         running = false;
         notifyChanged();

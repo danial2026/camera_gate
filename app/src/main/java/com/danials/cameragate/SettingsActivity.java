@@ -73,8 +73,9 @@ public class SettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
-        LocaleHelper.applyLayoutDirection(this,
-                findViewById(android.R.id.content));
+        View content = findViewById(android.R.id.content);
+        LocaleHelper.applyLayoutDirection(this, content);
+        UiInsets.apply(content);
 
         final Settings settings = new Settings(this);
         final CameraGate gate = CameraGateApp.gate();
