@@ -60,6 +60,7 @@
     <string name="settings_fps">STREAM FPS</string>
     <string name="fps_auto">AUTO (UNCAPPED)</string>
     <string name="settings_osd">STATUS OVERLAY (TIME · FPS · BATTERY)</string>
+    <string name="settings_faces">FACE DETECTION (HACKER BOXES)</string>
     <string name="addr_all">0.0.0.0 — ALL INTERFACES</string>
     <string name="addr_local">127.0.0.1 — LOCAL ONLY</string>
     <string name="size_auto">AUTO (LARGEST)</string>

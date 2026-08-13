@@ -38,6 +38,7 @@ public class SettingsActivity extends Activity {
     private Spinner fpsSpinner;
     private Spinner languageSpinner;
     private CheckBox osdCheck;
+    private CheckBox faceCheck;
 
     private final List<String> addressValues = new ArrayList<String>();
     private final List<String> sizeValues = new ArrayList<String>();
@@ -78,11 +79,13 @@ public class SettingsActivity extends Activity {
         fpsSpinner = (Spinner) findViewById(R.id.spinner_fps);
         languageSpinner = (Spinner) findViewById(R.id.spinner_language);
         osdCheck = (CheckBox) findViewById(R.id.check_osd);
+        faceCheck = (CheckBox) findViewById(R.id.check_faces);
 
         portInput.setText(String.valueOf(settings.getPort()));
         tokenInput.setText(settings.getToken());
         cameraInput.setText(String.valueOf(settings.getCameraId()));
         osdCheck.setChecked(settings.getOsdEnabled());
+        faceCheck.setChecked(settings.getFaceDetectEnabled());
 
         setupAddressSpinner(settings);
         setupSizeSpinner(settings, gate);
@@ -313,6 +316,7 @@ public class SettingsActivity extends Activity {
             int fIdx = fpsSpinner.getSelectedItemPosition();
             settings.setFps(fpsValues.get(fIdx < 0 ? 0 : fIdx));
             settings.setOsdEnabled(osdCheck.isChecked());
+            settings.setFaceDetectEnabled(faceCheck.isChecked());
 
             if (gate.isRunning()) {
                 Toast.makeText(this, R.string.settings_restart_needed,

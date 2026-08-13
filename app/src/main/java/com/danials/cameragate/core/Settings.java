@@ -94,6 +94,18 @@ public final class Settings {
         prefs().edit().putBoolean("osd", enabled).apply();
     }
 
+    /**
+     * Hacker-mode face detection: green targeting boxes around faces,
+     * using the framework FaceDetector (no extra libraries).
+     */
+    public boolean getFaceDetectEnabled() {
+        return prefs().getBoolean("faceDetect", false);
+    }
+
+    public void setFaceDetectEnabled(boolean enabled) {
+        prefs().edit().putBoolean("faceDetect", enabled).apply();
+    }
+
     /** Stream frame-rate cap in fps (0 = uncapped). */
     public int getFps() {
         int fps = prefs().getInt("fps", 15);

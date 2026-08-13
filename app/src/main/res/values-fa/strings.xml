@@ -59,6 +59,7 @@
     <string name="settings_fps">نرخ فریم استریم</string>
     <string name="fps_auto">خودکار (بدون محدودیت)</string>
     <string name="settings_osd">نوار وضعیت روی تصویر (زمان · نرخ فریم · باتری)</string>
+    <string name="settings_faces">تشخیص چهره (جعبه‌های هکری)</string>
     <string name="addr_all">0.0.0.0 — همهٔ رابط‌ها</string>
     <string name="addr_local">127.0.0.1 — فقط محلی</string>
     <string name="size_auto">خودکار (بزرگ‌ترین)</string>

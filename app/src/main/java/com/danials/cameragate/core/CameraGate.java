@@ -73,6 +73,7 @@ public final class CameraGate {
             return false;
         }
         frames.setOsdEnabled(settings.getOsdEnabled());
+        frames.setFaceDetection(settings.getFaceDetectEnabled());
         frames.setMaxFps(settings.getFps());
         List<String> ips = ipAddresses();
         frames.setOsdLabel(ips.isEmpty() ? null
@@ -349,6 +350,8 @@ public final class CameraGate {
             .append("\"ips\":").append(ipsJson())
           .append("},")
           .append("\"osd\":").append(settings.getOsdEnabled()).append(',')
+          .append("\"faceDetect\":").append(settings.getFaceDetectEnabled()).append(',')
+          .append("\"faces\":").append(frames.faceCount()).append(',')
           .append("\"record\":{")
             .append("\"recording\":").append(recording()).append(',')
             .append("\"file\":");
