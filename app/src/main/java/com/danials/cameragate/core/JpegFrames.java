@@ -75,6 +75,9 @@ public final class JpegFrames {
     private long latestSeq = 0;
     private int width;
     private int height;
+    // newest frame before the OSD/box overlay: the detector scans this
+    // copy so stamped text and old boxes never feed back into a scan
+    private byte[] latestRaw;   // guarded by lock
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Listener listener;
@@ -109,13 +112,22 @@ public final class JpegFrames {
     // Face detection runs on its own thread: a slow Haar pass takes
     // seconds on old phones and must never hold up the converter, or the
     // stream drifts behind live time. The scanner re-scans the newest
-    // frame, paced by the cost of the last pass. The legacy Camera API
-    // stream is never rotated, so a person can appear sideways to the
-    // detector: each pass scans the frame as-is and rotated 90 degrees -
-    // search mode does both, tracking alternates. Scale, rate, max faces,
-    // strictness and the full-res probe are user-tunable in Settings.
+    // frame, paced by the cost of the last pass (capped so boxes never
+    // fall more than a second behind the live picture). It reads the
+    // clean frame before the OSD overlay - feeding the detector the
+    // re-encoded, box-and-text-stamped picture costs sensitivity and
+    // feeds the previous boxes back into the next scan. The legacy
+    // Camera API stream is never rotated, so a person can appear
+    // sideways to the detector: each pass scans the frame as-is and
+    // rotated 90 degrees - cheap coarse scales scan both rotations,
+    // expensive fine scales alternate and prefer the rotation that last
+    // found a face. Scale, rate, max faces, strictness and the full-res
+    // probe are user-tunable in Settings.
     private static final int MAX_FACES_HARD = 32;
     private static final long DETECT_INTERVAL_MS_DEFAULT = 250;
+    // hard ceiling on the scan cadence: no matter how slow a pass was,
+    // the next scan starts no later than this, so boxes track live motion
+    private static final long DETECT_INTERVAL_MAX_MS = 1000;
     private volatile boolean faceDetectEnabled = false;
     private volatile int faceMaxFaces = 4;
     private volatile int faceFinestDiv = 2;
@@ -128,6 +140,8 @@ public final class JpegFrames {
     private volatile int faceCount = 0;
     private Paint faceBorder;
     private Paint faceCorner;
+    // the rotation (0 or 1) that last produced detections; -1 = none yet
+    private int prefRot = -1;
 
     // ---- face scan thread ----
     // Owns every object the cascade touches, so the converter never waits
@@ -158,24 +172,27 @@ public final class JpegFrames {
     // cost of the last pass: the scan interval grows with it, a slow
     // level must not hog the CPU
     private long lastPassMs = 0;
+    private long lastPassPrep = 0;
+    private long lastPassScan = 0;
     private final Rect[] boxes0 = new Rect[MAX_FACES_HARD];
     private final Rect[] boxes90 = new Rect[MAX_FACES_HARD];
     private int count0, count90, slot0 = -10, slot90 = -10;
     private int slotTick = 0;
-    // scan levels: 0=1/4, 1=1/3, 2=1/2, 3=full; adapts between coarse and
-    // the user's finest level (full only via the deep-scan probe)
-    private int escLevel = 0;
+    // scan levels: 0=1/4, 1=1/3, 2=1/2, 3=full; escalates on empty runs
+    // and never drops while faces are found - a level that keeps finding
+    // faces must keep them, or the boxes oscillate on and off
+    private int escLevel = 1;
     private int emptyRuns = 0;
-    private int foundRuns = 0;
     private int probeTick = 0;
-    // plain paint: the Haar engine normalizes contrast per window, so no
-    // pre-processing is applied to the detection draw
-    private final Paint detectPaint = new Paint();
+    // bilinear downscale of the full frame into the scan bitmaps: the
+    // Haar engine normalizes contrast per window, so no contrast
+    // pre-processing is applied, but nearest-neighbour sampling would
+    // alias away small faces
+    private final Paint detectPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     // per-pass timing so we can tune scale/cost from logcat
     private long passCostSum = 0;
     private int passCostN = 0;
     private long passCostMax = 0;
-    private long passCostStart = 0;
     private final Matrix map0 = new Matrix();
     private final Matrix inv0 = new Matrix();
     private final Matrix map90 = new Matrix();
@@ -362,10 +379,18 @@ public final class JpegFrames {
             return;
         }
         byte[] jpeg = out.toByteArray();
+        byte[] raw = jpeg;
         if (osdEnabled || faceDetectEnabled) {
+            // overlayOsd returns a fresh array only when it re-encodes,
+            // so the pre-overlay bytes survive in [raw]
             jpeg = overlayOsd(jpeg);
         }
         synchronized (lock) {
+            if (faceDetectEnabled) {
+                // keep the pre-overlay frame for the scanner: stamped
+                // text and old boxes must never feed back into a scan
+                latestRaw = raw;
+            }
             latestJpeg = jpeg;
             latestSeq++;
             lock.notifyAll();
@@ -406,6 +431,13 @@ public final class JpegFrames {
     public byte[] latest() {
         synchronized (lock) {
             return latestJpeg;
+        }
+    }
+
+    /** Newest frame before the OSD overlay (detector input). */
+    public byte[] latestRaw() {
+        synchronized (lock) {
+            return latestRaw;
         }
     }
 
@@ -546,26 +578,29 @@ public final class JpegFrames {
             if (now - scanLastAt < scanIntervalMs) {
                 continue;
             }
-            byte[] jpeg = latest();
+            byte[] jpeg = latestRaw();
             if (jpeg == null) {
                 continue;
             }
-            scanLastAt = now;
             runScan(jpeg);
+            // pace from the END of the scan, not its start: otherwise a
+            // slow pass delays every following scan by its own duration
+            scanLastAt = SystemClock.uptimeMillis();
         }
     }
 
     /**
-     * One detection slot: decodes the newest JPEG and runs the engine on
-     * small scaled copies (reused bitmaps only, no per-frame allocation),
-     * mapping the found boxes back to full resolution. The stream is
-     * never rotated, so a person can appear sideways: orientations 0 and
-     * 90 are scanned on alternating slots and the freshest orientation
-     * that found faces wins. Scale adapts between 1/4 and the user's
-     * finest level; when passes cost seconds the level caps at 1/3 and
-     * the next slot waits longer - garbage in, fewer looks.
+     * One detection slot: decodes the newest pre-overlay JPEG and runs
+     * the engine on small scaled copies (reused bitmaps only, no
+     * per-frame allocation), mapping the found boxes back to full
+     * resolution. The stream is never rotated, so a person can appear
+     * sideways: cheap coarse scales scan orientations 0 and 90, expensive
+     * fine scales alternate and prefer the rotation that last found
+     * faces. Scale adapts between 1/4 and the user's finest level, and
+     * the scan cadence is capped so boxes track live motion.
      */
     private void runScan(byte[] jpeg) {
+        long slotStart = SystemClock.uptimeMillis();
         if (!ensureEngine()) {
             faceCount = 0;
             return;
@@ -576,9 +611,12 @@ public final class JpegFrames {
                 fullBmp.recycle();
             }
             fullBmp = Bitmap.createBitmap(width, height,
-                    Bitmap.Config.RGB_565);
+                    Bitmap.Config.ARGB_8888);
             fullOpts = new BitmapFactory.Options();
-            fullOpts.inPreferredConfig = Bitmap.Config.RGB_565;
+            // ARGB_8888, not RGB_565: getPixels must hand back real
+            // 8-bit channels for the luma formula on every Android
+            // version (565 handling of getPixels changed over time)
+            fullOpts.inPreferredConfig = Bitmap.Config.ARGB_8888;
             fullOpts.inBitmap = fullBmp;
         }
         Bitmap full;
@@ -602,10 +640,6 @@ public final class JpegFrames {
         int dh = Math.max(96, height * dw / width) & ~1;
         try {
             boolean tracking = faceCount > 0 && emptyRuns < 3;
-            // search mode (both orientations) runs at the user's finest
-            // level; coarse levels only alternate to save CPU
-            boolean fine = escLevel >= maxLevel - (faceDeepScan ? 1 : 0)
-                    && emptyRuns < 12;
             boolean fullProbe = faceDeepScan && escLevel == maxLevel
                     && emptyRuns >= 12 && (probeTick++ & 7) == 0;
             if (fullProbe) {
@@ -621,8 +655,8 @@ public final class JpegFrames {
                 }
                 dbW = dw;
                 dbH = dh;
-                bmp0 = Bitmap.createBitmap(dw, dh, Bitmap.Config.RGB_565);
-                bmp90 = Bitmap.createBitmap(dh, dw, Bitmap.Config.RGB_565);
+                bmp0 = Bitmap.createBitmap(dw, dh, Bitmap.Config.ARGB_8888);
+                bmp90 = Bitmap.createBitmap(dh, dw, Bitmap.Config.ARGB_8888);
                 dbPixels = new int[dw * dh];
                 dbGray[0] = new byte[dw * dh];
                 dbGray[1] = new byte[dw * dh];
@@ -639,13 +673,16 @@ public final class JpegFrames {
                 map90.postScale(k, k);
                 map90.invert(inv90);
             }
-            passCostStart = SystemClock.uptimeMillis();
-            // hunt: both rotations only while a face is still missing
-            // (or every 4th slot); tracking alternates to keep the pass
-            // cheap on an active stream
-            boolean hunting = faceCount > 0 && faceCount < faceMaxFaces
-                    && (emptyRuns > 0 || (slotTick & 3) == 0);
-            if ((fine && !fullProbe && !tracking) || hunting) {
+            // Rotation strategy: coarse passes (1/4, 1/3) are cheap, so
+            // search mode scans both rotations there and finds a sideways
+            // face on the first slot; fine passes (1/2) cost seconds, so
+            // they alternate and prefer the rotation that last found a
+            // face, probing the other rotation on a slow beat.
+            boolean dual = fullProbe
+                    || (!tracking && div >= 3)
+                    || (faceCount > 0 && faceCount < faceMaxFaces
+                            && (slotTick & (div >= 3 ? 1 : 7)) == 0);
+            if (dual) {
                 // search/hunt: scan both rotations so a sideways face is
                 // not missed while we still have box room
                 int c0 = runPass(bmp0, full, map0, inv0, boxes0);
@@ -654,17 +691,23 @@ public final class JpegFrames {
                 count90 = c90;
                 slot0 = ++slotTick;
                 slot90 = ++slotTick;
+                prefRot = c0 > 0 && c90 == 0 ? 0
+                        : (c90 > 0 && c0 == 0 ? 1 : -1);
             } else {
-                boolean rot = (slotTick++ & 1) != 0;
-                int n = runPass(rot ? bmp90 : bmp0, full,
-                        rot ? map90 : map0, rot ? inv90 : inv0,
-                        rot ? boxes90 : boxes0);
-                if (rot) {
+                int rot = prefRot >= 0 ? prefRot
+                        : ((slotTick++ & 1) != 0 ? 1 : 0);
+                int n = runPass(rot != 0 ? bmp90 : bmp0, full,
+                        rot != 0 ? map90 : map0, rot != 0 ? inv90 : inv0,
+                        rot != 0 ? boxes90 : boxes0);
+                if (rot != 0) {
                     count90 = n;
                     slot90 = slotTick;
                 } else {
                     count0 = n;
                     slot0 = slotTick;
+                }
+                if (n == 0) {
+                    prefRot = -1;
                 }
             }
             // merge both orientations instead of winner-take-all: a face
@@ -691,17 +734,19 @@ public final class JpegFrames {
             faceCount = count;
             if (count > 0) {
                 emptyRuns = 0;
-                if (++foundRuns >= 5 && escLevel > 0) {
-                    // steady detections at a finer scale: try coarser
-                    // again to save CPU
-                    escLevel--;
-                    foundRuns = 0;
-                }
             } else {
-                foundRuns = 0;
                 if (++emptyRuns >= 2 && escLevel < maxLevel) {
                     // nothing found: escalate to the next finer level
                     escLevel++;
+                    emptyRuns = 0;
+                } else if (emptyRuns >= 8 && escLevel > 0) {
+                    // long dry spell at a fine level: drop one level so an
+                    // idle scene scans cheaply again; a face coming back
+                    // re-escalates within a couple of slots. Never drops
+                    // while faces are found - that was the oscillation:
+                    // 5 found runs de-escalated the scale, the face went
+                    // marginal there, and the boxes blinked on and off.
+                    escLevel--;
                     emptyRuns = 0;
                 }
             }
@@ -712,16 +757,20 @@ public final class JpegFrames {
                 Log.i(TAG, "face detect: kept " + count + " (0deg=" + count0
                         + ", 90deg=" + count90 + ") on " + dw + "x" + dh
                         + " scale=1/" + div + (fullProbe ? " FULL" : "")
-                        + " passAvg=" + avg + "ms max=" + passCostMax + "ms");
+                        + " passAvg=" + avg + "ms max=" + passCostMax
+                        + "ms prep=" + lastPassPrep + "ms scan=" + lastPassScan
+                        + "ms layers=" + faceEngine.lastLayerCount()
+                        + " wins=" + faceEngine.lastWindowCount());
                 passCostSum = 0;
                 passCostN = 0;
                 passCostMax = 0;
             }
-            // pace the next scan: a slow pass must not hog the CPU,
-            // boxes just update less often
-            long want = lastPassMs > 600
-                    ? Math.max(faceScanMs, lastPassMs * 3)
-                    : Math.max(faceScanMs, (lastPassMs + 1) * 2);
+            // pace the next scan: a slow pass must not hog the CPU, but
+            // the cadence is capped so boxes never fall more than a
+            // second behind the live picture
+            long slotMs = SystemClock.uptimeMillis() - slotStart;
+            long want = Math.max(faceScanMs,
+                    Math.min(DETECT_INTERVAL_MAX_MS, (slotMs + 1) * 2));
             if (scanIntervalMs != want) {
                 scanIntervalMs = want;
             }
@@ -815,6 +864,8 @@ public final class JpegFrames {
         }
         long dt = SystemClock.uptimeMillis() - t0;
         lastPassMs = dt;
+        lastPassPrep = faceEngine.lastPrepMs();
+        lastPassScan = faceEngine.lastScanMs();
         passCostSum += dt;
         passCostN++;
         if (dt > passCostMax) {

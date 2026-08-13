@@ -203,8 +203,8 @@ public final class Cascade {
         if (nf <= 0) {
             return -1000;
         }
-        double inv = 1.0 / Math.sqrt(nf);
-        if (area * inv >= 1e-1) {
+        float inv = (float) (1.0 / Math.sqrt(nf));
+        if ((float) area * inv >= 1e-1f) {
             return -1000; // window too flat (OpenCV's flatness gate)
         }
         return stumpBased ? runHaarStagesStump(ig, base, inv) : runHaarStages(ig, base, inv);
@@ -215,7 +215,7 @@ public final class Cascade {
      * with two leaves; the XML left/right node fields are ignored and the
      * tree's two consecutive leaf values are added directly.
      */
-    private int runHaarStagesStump(IntegralImage ig, int base, double invNorm) {
+    private int runHaarStagesStump(IntegralImage ig, int base, float invNorm) {
         int[] sum = ig.sum;
         int[] ofs = featOfs;
         float[] leaves = this.leaves;
@@ -224,7 +224,7 @@ public final class Cascade {
         int nStages = stageFirst.length;
         int tree = 0;
         for (int si = 0; si < nStages; si++) {
-            double stageSum = 0;
+            float stageSum = 0;
             int ntrees = stageTrees[si];
             for (int wi = 0; wi < ntrees; wi++, tree++) {
                 int nBase = tree;
@@ -261,7 +261,7 @@ public final class Cascade {
         return 1;
     }
 
-    private int runHaarStages(IntegralImage ig, int base, double invNorm) {
+    private int runHaarStages(IntegralImage ig, int base, float invNorm) {
         int[] sum = ig.sum;
         int[] ofs = featOfs;
         int[] featRC = featRectCount;
@@ -275,7 +275,7 @@ public final class Cascade {
         int nodeOfs = 0;
         int leafOfs = 0;
         for (int si = 0; si < nStages; si++) {
-            double stageSum = 0;
+            float stageSum = 0;
             int ntrees = sTrees[si];
             int t0 = sFirst[si];
             for (int wi = 0; wi < ntrees; wi++) {
@@ -306,7 +306,7 @@ public final class Cascade {
                                     + sum[base + ofs[f2 + 3]]);
                         }
                     }
-                    double val = fv * invNorm;
+                    float val = fv * invNorm;
                     float t = Float.intBitsToFloat(nodes[nBase * 4 + 3]);
                     idx = val < t ? nodes[nBase * 4] : nodes[nBase * 4 + 1];
                 } while (idx > 0);
@@ -339,7 +339,7 @@ public final class Cascade {
         int nStages = stageFirst.length;
         int tree = 0;
         for (int si = 0; si < nStages; si++) {
-            double stageSum = 0;
+            float stageSum = 0;
             int ntrees = stageTrees[si];
             for (int wi = 0; wi < ntrees; wi++, tree++) {
                 int nBase = tree;
@@ -408,7 +408,7 @@ public final class Cascade {
         int nodeOfs = 0;
         int leafOfs = 0;
         for (int si = 0; si < nStages; si++) {
-            double stageSum = 0;
+            float stageSum = 0;
             int ntrees = sTrees[si];
             int t0 = sFirst[si];
             for (int wi = 0; wi < ntrees; wi++) {

@@ -53,9 +53,31 @@ public final class IntegralImage {
     static IntegralImage compute(byte[] gray, int w, int h,
                                  boolean needSq, boolean needTilted) {
         IntegralImage ii = new IntegralImage(w, h, needSq, needTilted);
+        computeInto(ii, gray, w, h);
+        return ii;
+    }
+
+    /**
+     * Recomputes the integrals of {@code gray} into this image's existing
+     * buffers (sizes must match). Same math as {@link #compute}; the only
+     * difference is zero allocation, so a repeated scan of the same layer
+     * size never touches the garbage collector.
+     */
+    void refill(byte[] gray, int w, int h) {
+        if (w != this.w || h != this.h) {
+            throw new IllegalArgumentException(
+                    "refill size mismatch: " + w + "x" + h
+                            + " vs " + this.w + "x" + this.h);
+        }
+        computeInto(this, gray, w, h);
+    }
+
+    private static void computeInto(IntegralImage ii, byte[] gray,
+                                    int w, int h) {
         int[] sum = ii.sum;
         int[] sqsum = ii.sqsum;
         int stride = ii.stride;
+        boolean needSq = sqsum != null;
 
         // row 1 (buffer row 0 stays zero): prefix sums of source row 0
         for (int x = 0; x < w; x++) {
@@ -82,10 +104,9 @@ public final class IntegralImage {
             }
         }
 
-        if (needTilted) {
+        if (ii.tilted != null) {
             computeTilted(ii, gray, w, h);
         }
-        return ii;
     }
 
     /**
