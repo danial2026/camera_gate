@@ -222,21 +222,56 @@ func streamLoop(direct bool, url, token, outDir string,
 }
 
 func main() {
-	url := flag.String("url", "ws://192.168.0.52:8080/ws", "websocket url")
+	url := flag.String("url", "", "full websocket url (overrides -ip/-port)")
+	ip := flag.String("ip", "192.168.0.1", "camera ip address")
+	port := flag.String("port", "8080", "camera port")
 	token := flag.String("token", "", "auth token (optional)")
 	out := flag.String("out", "", "optional dir to save raw jpeg frames")
 	direct := flag.Bool("direct", false, "use raw Go TCP dialer instead of curl transport")
 	flag.Parse()
 
+	args := flag.Args()
+	if len(args) >= 1 {
+		*ip = args[0]
+	}
+	if len(args) >= 2 {
+		*port = args[1]
+	}
+
+	explicit := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+
+	var streamURL string
+	if *url != "" {
+		streamURL = *url
+	} else {
+		if !explicit["ip"] && !explicit["port"] && len(args) == 0 {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Fprintf(os.Stderr, "Camera IP [%s]: ", *ip)
+			if line, err := reader.ReadString('\n'); err == nil {
+				if v := strings.TrimSpace(line); v != "" {
+					*ip = v
+				}
+			}
+			fmt.Fprintf(os.Stderr, "Camera port [%s]: ", *port)
+			if line, err := reader.ReadString('\n'); err == nil {
+				if v := strings.TrimSpace(line); v != "" {
+					*port = v
+				}
+			}
+		}
+		streamURL = fmt.Sprintf("ws://%s:%s/ws", *ip, *port)
+	}
+
 	a := app.NewWithID("com.danials.cameragate.viewer")
-	w := a.NewWindow("CameraGate stream: " + *url)
+	w := a.NewWindow("CameraGate stream: " + streamURL)
 	w.Resize(fyne.NewSize(960, 600))
 
 	img := canvas.NewImageFromImage(nil)
 	img.FillMode = canvas.ImageFillContain
 	img.SetMinSize(fyne.NewSize(640, 360))
 
-	status := widget.NewLabel("connecting to " + *url + " ...")
+	status := widget.NewLabel("connecting to " + streamURL + " ...")
 	status.Alignment = fyne.TextAlignCenter
 
 	w.SetContent(container.NewBorder(nil, status, nil, nil, container.NewStack(img)))
@@ -244,14 +279,14 @@ func main() {
 
 	var frames, decodeErr uint64
 
-	go streamLoop(*direct, *url, *token, *out, img, status, &frames, &decodeErr)
+	go streamLoop(*direct, streamURL, *token, *out, img, status, &frames, &decodeErr)
 
 	go func() {
 		tick := time.NewTicker(2 * time.Second)
 		for range tick.C {
 			f := atomic.LoadUint64(&frames)
 			d := atomic.LoadUint64(&decodeErr)
-			u := *url
+			u := streamURL
 			fyne.Do(func() {
 				status.SetText(fmt.Sprintf("frames: %d  decode errors: %d  (%s)", f, d, u))
 			})
