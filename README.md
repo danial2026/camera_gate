@@ -33,6 +33,17 @@ API, so no modern Android features are required on the device running it.
 - foreground service (notification + wake lock) keeps the camera alive with
   the screen off; an AlarmManager watchdog + `onTaskRemoved` restart make the
   server survive swipe-away and task killers (especially on Android 4.x)
+- on-device face detection: a pure-Java Viola-Jones engine (a faithful port
+  of OpenCV's Haar cascade classifier — integral images, tilted integrals,
+  variance normalization — with the bundled `haarcascade_frontalface_alt`
+  model, zero OS/NDK dependencies) draws hacker-style green targeting boxes
+  on the stream; frames are scanned upright and rotated 90° (the legacy
+  stream is never rotated), and scale, scan rate, max faces, contrast and a
+  full-res re-acquire probe are tunable in settings
+- host-side verification: the cascade engine is plain Java, so
+  `scripts/hosttest.sh` compiles it with the desktop JDK and runs 2200+
+  assertions against hand-built micro-cascades and an independent translation
+  of OpenCV's math, all without a phone
 - UI follows [UI_DESIGN_GUIDE.md](./UI_DESIGN_GUIDE.md) — pure-black
   engineering aesthetic, cards, monospace data
 
@@ -46,6 +57,7 @@ Requires JDK 17+ (Android Studio's bundled JBR works), Android SDK, Gradle.
 scripts/build.sh               # debug APK
 scripts/build.sh release       # signed release APK (app/key.properties)
 scripts/check.sh --release     # compile + lint + release
+scripts/hosttest.sh            # host-side cascade engine tests (no phone)
 scripts/dev.sh icon            # regenerate launcher icons
 scripts/run.sh                 # install + launch + logcat on the phone
 scripts/run.sh release         # same with the release APK
@@ -53,7 +65,7 @@ scripts/device_test.sh         # full on-device smoke + resilience test
 ```
 
 APK output: `app/build/outputs/apk/` — e.g.
-`cameragate-v0.0.1-release.apk`.
+`cameragate-v0.0.2-release.apk`.
 
 `scripts/build.sh release` signs with `app/key.properties` +
 `app/upload-keystore.jks` when present; on a fresh clone without them the
@@ -120,6 +132,12 @@ stops delivering preview frames to MediaRecorder, so `/snapshot`,
 | Stream resolution | preview/stream size: `AUTO` or a fixed size (e.g. `640x480`) |
 | Stream FPS | encoder cap (5/10/15/20/30 FPS); `AUTO` = uncapped |
 | Status overlay | green OSD (timestamp · FPS · battery) drawn on every frame |
+| Face detection | hacker-style green targeting boxes around faces (Haar cascade engine) |
+| Face max | maximum faces per scan (1..8) |
+| Face finest scale | smallest scale probed (1/4 .. full res); smaller = smaller faces = slower |
+| Face scan interval | ms between detection passes (60..2000) |
+| Face contrast | analysis contrast boost (1.0 = off .. 2.0) |
+| Face deep scan | full-resolution re-acquire probe while nothing is found |
 | Language | UI language: English or فارسی — applies immediately |
 | Camera id | `0` back camera, `1` front camera |
 
@@ -170,8 +188,15 @@ app/src/main/java/com/danials/cameragate/
       JpegFrames.java         NV21 -> JPEG pipeline shared by all clients
       HttpServer.java         ServerSocket HTTP/1.1 + MJPEG + WebSocket
       Settings.java           SharedPreferences persistence
+      face/
+        Cascade.java          OpenCV cascade classifier evaluator (HAAR/LBP)
+        CascadeParser.java    classic cascade XML parser
+        FaceDetector.java     multi-scale scan driver with variance gate
+        IntegralImage.java    integral / square / tilted integral images
+        IntRect.java          integer rectangle
+host-test/                    host-side cascade engine tests (FaceEngineTest.java)
 scripts/generate_icon.py      launcher icon generator (Pillow)
-scripts/{build,run,device_test}.sh   build/run/test helpers
+scripts/{build,run,device_test,hosttest}.sh   build/run/test helpers
 screenshot/                  on-device test evidence (device_test.sh)
 UI_DESIGN_GUIDE.md           the app's UI style guide
 ```
