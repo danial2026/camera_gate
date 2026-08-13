@@ -8,31 +8,19 @@ Self-hosted camera server Android app. Turns an old Android phone into a camera 
 
 Main Screen (Running)
 
-Live Preview + QR
+Main Screen (Bottom)
 
-[![Main Screen](https://github.com/danial2026/camera_gate/raw/main/screenshots/01_main_top_running.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/01_main_top_running.png)
+[![Main Screen](/danial2026/camera_gate/raw/main/screenshots/01_main_top_running.png)](/danial2026/camera_gate/blob/main/screenshots/01_main_top_running.png)
 
-[![QR Connect](https://github.com/danial2026/camera_gate/raw/main/screenshots/02_main_qr_connect.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/02_main_qr_connect.png)
-
-Live Stream Preview
-
-Recording
-
-[![Preview Streaming](https://github.com/danial2026/camera_gate/raw/main/screenshots/03_main_preview_streaming.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/03_main_preview_streaming.png)
-
-[![Recording](https://github.com/danial2026/camera_gate/raw/main/screenshots/05_main_recording_bottom.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/05_main_recording_bottom.png)
-
-Face Detection
+[![Main Screen](/danial2026/camera_gate/raw/main/screenshots/02_main_bottom_final.png)](/danial2026/camera_gate/blob/main/screenshots/02_main_bottom_final.png)
 
 Settings
 
-[![Face Detection](https://github.com/danial2026/camera_gate/raw/main/screenshots/16_main_stream_face_detect.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/16_main_stream_face_detect.png)
-
-[![Settings](https://github.com/danial2026/camera_gate/raw/main/screenshots/10_settings_keyboard_open.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/10_settings_keyboard_open.png)
-
 Advanced Settings
 
-[![Advanced Settings](https://github.com/danial2026/camera_gate/raw/main/screenshots/12_settings_bottom_advanced.png)](https://github.com/danial2026/camera_gate/blob/main/screenshots/12_settings_bottom_advanced.png)
+[![Settings](/danial2026/camera_gate/raw/main/screenshots/03_settings_keyboard_closed.png)](/danial2026/camera_gate/blob/main/screenshots/03_settings_keyboard_closed.png)
+
+[![Advanced Settings](/danial2026/camera_gate/raw/main/screenshots/04_settings_bottom_advanced.png)](/danial2026/camera_gate/blob/main/screenshots/04_settings_bottom_advanced.png)
 
 ## Features
 
