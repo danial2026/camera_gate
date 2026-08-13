@@ -106,15 +106,14 @@ public final class JpegFrames {
     private long lastConvertTime = 0;
 
     // ---- face detection (hacker boxes) ----
-    // A pure-Java Viola-Jones cascade engine (core/face) replaces the
-    // framework's android.media.FaceDetector: no OS dependency, works on
-    // every API level, and the Haar classifier is far more robust than the
-    // Neven engine. The legacy Camera API delivers sensor-raw NV21 frames,
-    // which the stream never rotates, so a person can appear sideways to
-    // the detector: we scan the frame as-is and rotated 90 degrees - search
-    // mode does both per slot, tracking mode alternates to keep fps. Scale,
-    // rate, max faces, strictness and the full-res probe are user-tunable
-    // in Settings.
+    // Face detection runs on its own thread: a slow Haar pass takes
+    // seconds on old phones and must never hold up the converter, or the
+    // stream drifts behind live time. The scanner re-scans the newest
+    // frame, paced by the cost of the last pass. The legacy Camera API
+    // stream is never rotated, so a person can appear sideways to the
+    // detector: each pass scans the frame as-is and rotated 90 degrees -
+    // search mode does both, tracking alternates. Scale, rate, max faces,
+    // strictness and the full-res probe are user-tunable in Settings.
     private static final int MAX_FACES_HARD = 32;
     private static final long DETECT_INTERVAL_MS_DEFAULT = 250;
     private volatile boolean faceDetectEnabled = false;
@@ -123,8 +122,30 @@ public final class JpegFrames {
     private volatile long faceScanMs = DETECT_INTERVAL_MS_DEFAULT;
     private volatile int faceMinNeighbors = 3;
     private volatile boolean faceDeepScan = true;
+    // boxes drawn by the converter: written by the scanner, read through
+    // the volatile count below (release/acquire keeps them in sync)
+    private final Rect[] faceBoxes = new Rect[MAX_FACES_HARD];
+    private volatile int faceCount = 0;
+    private Paint faceBorder;
+    private Paint faceCorner;
+
+    // ---- face scan thread ----
+    // Owns every object the cascade touches, so the converter never waits
+    // on a scan: cost-paced scans of the newest frame, results published
+    // to faceCount/faceBoxes above.
+    private final Thread scanner = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            scanLoop();
+        }
+    }, "cameragate-scanner");
+    private long scanSeq = latestSeq();
+    private long scanLastAt = -1;
+    private long scanIntervalMs = DETECT_INTERVAL_MS_DEFAULT;
     private FaceDetector faceEngine;
     private boolean engineFailed = false;
+    private Bitmap fullBmp;
+    private BitmapFactory.Options fullOpts;
     private Bitmap bmp0;
     private Bitmap bmp90;
     private int dbW;
@@ -133,15 +154,10 @@ public final class JpegFrames {
     private final byte[][] dbGray = new byte[2][];
     private final List<IntRect> engineBoxes = new ArrayList<IntRect>(8);
     private final float[] boxPts = new float[8];
-    private long lastDetectAt = -1;
     private long lastDetectLogAt = -1;
-    private long detectIntervalMs = DETECT_INTERVAL_MS_DEFAULT;
     // cost of the last pass: the scan interval grows with it, a slow
-    // level must not stall the stream
-    private volatile long lastPassMs = 0;
-    // boxes actually drawn, plus per-orientation results so the freshest
-    // pass that found faces wins (orientations alternate per slot)
-    private final Rect[] faceBoxes = new Rect[MAX_FACES_HARD];
+    // level must not hog the CPU
+    private long lastPassMs = 0;
     private final Rect[] boxes0 = new Rect[MAX_FACES_HARD];
     private final Rect[] boxes90 = new Rect[MAX_FACES_HARD];
     private int count0, count90, slot0 = -10, slot90 = -10;
@@ -164,9 +180,6 @@ public final class JpegFrames {
     private final Matrix inv0 = new Matrix();
     private final Matrix map90 = new Matrix();
     private final Matrix inv90 = new Matrix();
-    private volatile int faceCount = 0;
-    private Paint faceBorder;
-    private Paint faceCorner;
 
     public JpegFrames(Context context) {
         this.appContext = context != null
@@ -179,6 +192,8 @@ public final class JpegFrames {
         }, "cameragate-converter");
         converter.setDaemon(true);
         converter.start();
+        scanner.setDaemon(true);
+        scanner.start();
         for (int i = 0; i < MAX_FACES_HARD; i++) {
             faceBoxes[i] = new Rect();
             boxes0[i] = new Rect();
@@ -258,7 +273,7 @@ public final class JpegFrames {
         }
     }
 
-    /** Permanent teardown; the converter thread exits. */
+    /** Permanent teardown; the converter and scanner threads exit. */
     public void shutdown() {
         synchronized (this) {
             shutdown = true;
@@ -266,6 +281,7 @@ public final class JpegFrames {
         synchronized (lock) {
             lock.notifyAll();
         }
+        scanner.interrupt();
     }
 
     public boolean isRunning() {
@@ -414,12 +430,9 @@ public final class JpegFrames {
      * dies because of the overlay.
      */
     private byte[] overlayOsd(byte[] jpeg) {
-        // nothing to stamp and detection is not due: keep the original
-        // JPEG, decode+re-encode every frame is what lags the stream
-        long now = SystemClock.uptimeMillis();
-        boolean detectDue = faceDetectEnabled
-                && now - lastDetectAt >= detectIntervalMs;
-        if (!osdEnabled && faceCount == 0 && !detectDue) {
+        // nothing to stamp: keep the original JPEG, decode+re-encode
+        // every frame is what lags the stream
+        if (!osdEnabled && faceCount == 0) {
             return jpeg;
         }
         // Decode straight into a reused mutable bitmap (inBitmap, API 11+):
@@ -492,7 +505,7 @@ public final class JpegFrames {
         }
 
         if (faceDetectEnabled) {
-            detectFacesIn(bmp);
+            // boxes come from the scanner thread, stamped as they are
             drawFaceBoxes(c);
         }
 
@@ -515,37 +528,79 @@ public final class JpegFrames {
     // ------------------------------------------------------------- faces
 
     /**
-     * Runs the framework FaceDetector on small scaled copies of the frame
-     * (reused bitmaps only, no per-frame allocation) and stores the scaled
-     * full-resolution boxes. The legacy Camera API stream is never rotated,
-     * so a person can appear sideways: orientations 0 and 90 are scanned on
-     * alternating slots, and the freshest orientation that found faces
-     * wins. Scans adapt between 1/4 and the user's finest scale (1/2 by
-     * default) so the old Neven detector (it needs >= 20px of eye distance
-     * in the analyzed image) works for faces that are merely close, not
-     * huge. Throttled so the oldest phones never burn a full core; between
-     * runs, the last boxes keep being drawn.
+     * Scanner thread: sleeps until a newer frame exists, then - paced by
+     * the cost of the last pass - decodes it and runs the cascade. The
+     * newest frame is always scanned, never a backlog, and the results
+     * are published to faceCount/faceBoxes for the converter's drawer.
      */
-    private void detectFacesIn(Bitmap full) {
-        long now = SystemClock.uptimeMillis();
-        if (now - lastDetectAt < detectIntervalMs) {
-            return;
+    private void scanLoop() {
+        while (true) {
+            scanSeq = awaitNewer(scanSeq, 300);
+            if (shutdown) {
+                return;
+            }
+            if (!faceDetectEnabled) {
+                continue;
+            }
+            long now = SystemClock.uptimeMillis();
+            if (now - scanLastAt < scanIntervalMs) {
+                continue;
+            }
+            byte[] jpeg = latest();
+            if (jpeg == null) {
+                continue;
+            }
+            scanLastAt = now;
+            runScan(jpeg);
         }
-        // settle the throttle: settings are applied live, not only on start
-        float interval = detectIntervalMs;
-        long want = faceScanMs;
-        if (interval != want) {
-            detectIntervalMs = want;
-        }
-        lastDetectAt = now;
+    }
+
+    /**
+     * One detection slot: decodes the newest JPEG and runs the engine on
+     * small scaled copies (reused bitmaps only, no per-frame allocation),
+     * mapping the found boxes back to full resolution. The stream is
+     * never rotated, so a person can appear sideways: orientations 0 and
+     * 90 are scanned on alternating slots and the freshest orientation
+     * that found faces wins. Scale adapts between 1/4 and the user's
+     * finest level; when passes cost seconds the level caps at 1/3 and
+     * the next slot waits longer - garbage in, fewer looks.
+     */
+    private void runScan(byte[] jpeg) {
         if (!ensureEngine()) {
             faceCount = 0;
+            return;
+        }
+        if (fullBmp == null || fullBmp.getWidth() != width
+                || fullBmp.getHeight() != height) {
+            if (fullBmp != null) {
+                fullBmp.recycle();
+            }
+            fullBmp = Bitmap.createBitmap(width, height,
+                    Bitmap.Config.RGB_565);
+            fullOpts = new BitmapFactory.Options();
+            fullOpts.inPreferredConfig = Bitmap.Config.RGB_565;
+            fullOpts.inBitmap = fullBmp;
+        }
+        Bitmap full;
+        try {
+            full = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length,
+                    fullOpts);
+        } catch (IllegalArgumentException sizeMismatch) {
+            // inBitmap race or size change: skip this slot
+            return;
+        }
+        if (full == null) {
             return;
         }
         int maxLevel = faceFinestDiv == 1 ? 3
                 : (faceFinestDiv == 2 ? 2 : (faceFinestDiv == 3 ? 1 : 0));
         // 1/2 is the practical finest level: full-res scans take seconds
         maxLevel = Math.min(2, maxLevel + (faceDeepScan ? 1 : 0));
+        if (lastPassMs > 900) {
+            // expensive scans (q72, far faces, old phone) go no finer
+            // than 1/3: a seconds-long pass must not become the norm
+            maxLevel = Math.min(maxLevel, 1);
+        }
         int div = escLevel == 0 ? 4 : (escLevel == 1 ? 3
                 : (escLevel == 2 ? 2 : 1));
         int dw = Math.max(96, width / div) & ~1;
@@ -596,9 +651,8 @@ public final class JpegFrames {
             boolean hunting = faceCount > 0 && faceCount < faceMaxFaces
                     && (emptyRuns > 0 || (slotTick & 3) == 0);
             if ((fine && !fullProbe && !tracking) || hunting) {
-                // search/hunt mode: both orientations every slot so a face
-                // only the other rotation would catch is not missed while
-                // we still have room for more boxes
+                // search/hunt: scan both rotations so a sideways face is
+                // not missed while we still have box room
                 int c0 = runPass(bmp0, full, map0, inv0, boxes0);
                 int c90 = runPass(bmp90, full, map90, inv90, boxes90);
                 count0 = c0;
@@ -618,10 +672,9 @@ public final class JpegFrames {
                     slot0 = slotTick;
                 }
             }
-            // merge both orientations' fresh boxes instead of winner-take-all:
-            // a face only the 90deg pass caught must not vanish just because
-            // the 0deg pass found nothing (or vice versa) - that is what made
-            // a second face in a different pose drop out
+            // merge both orientations instead of winner-take-all: a face
+            // one rotation caught must not vanish because the other
+            // found nothing
             int shownC0 = (count0 > 0 && slotTick - slot0 <= 3) ? count0 : 0;
             int shownC90 = (count90 > 0 && slotTick - slot90 <= 3)
                     ? count90 : 0;
@@ -657,6 +710,7 @@ public final class JpegFrames {
                     emptyRuns = 0;
                 }
             }
+            long now = SystemClock.uptimeMillis();
             if (now - lastDetectLogAt > 3000) {
                 lastDetectLogAt = now;
                 long avg = passCostN > 0 ? passCostSum / passCostN : 0;
@@ -668,11 +722,13 @@ public final class JpegFrames {
                 passCostN = 0;
                 passCostMax = 0;
             }
-            // pace the next scan: a slow pass on an old phone must not
-            // hold up the stream - boxes just update less often
-            long wantInterval = Math.max(faceScanMs, (lastPassMs + 1) * 2);
-            if (detectIntervalMs != wantInterval) {
-                detectIntervalMs = wantInterval;
+            // pace the next scan: a slow pass must not hog the CPU,
+            // boxes just update less often
+            long want = lastPassMs > 600
+                    ? Math.max(faceScanMs, lastPassMs * 3)
+                    : Math.max(faceScanMs, (lastPassMs + 1) * 2);
+            if (scanIntervalMs != want) {
+                scanIntervalMs = want;
             }
         } catch (Exception e) {
             Log.w(TAG, "face detection failed", e);
