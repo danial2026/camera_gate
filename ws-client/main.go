@@ -49,12 +49,23 @@ func dialCurl(url, token string) (*streamConn, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	br := bufio.NewReaderSize(stdout, 1<<16)
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			cmd.Process.Kill()
+			return nil, fmt.Errorf("curl stream: %v", err)
+		}
+		if len(bytes.TrimSpace([]byte(line))) == 0 {
+			break
+		}
+	}
 	go func() {
 		if err := cmd.Wait(); err != nil {
 			log.Printf("curl exited: %v", err)
 		}
 	}()
-	return &streamConn{r: bufio.NewReaderSize(stdout, 1<<16), c: cmd}, nil
+	return &streamConn{r: br, c: cmd}, nil
 }
 
 func dialRaw(url, token string) (*streamConn, error) {
@@ -189,7 +200,7 @@ func streamLoop(direct bool, url, token, outDir string,
 			time.Sleep(2 * time.Second)
 			continue
 		}
-		open := *url
+		open := url
 		fyne.Do(func() { status.SetText("streaming from " + open) })
 		br := bufio.NewReaderSize(conn.r, 1<<16)
 		for {
@@ -212,10 +223,10 @@ func streamLoop(direct bool, url, token, outDir string,
 			}
 			atomic.AddUint64(frames, 1)
 			img.Image = src
-			canvas.Refresh(img)
+			fyne.Do(func() { canvas.Refresh(img) })
 		}
 		closeConn(conn)
-		status.SetText("disconnected - reconnecting in 2s")
+		fyne.Do(func() { status.SetText("disconnected - reconnecting in 2s") })
 		time.Sleep(2 * time.Second)
 	}
 }
@@ -248,8 +259,12 @@ func main() {
 	go func() {
 		tick := time.NewTicker(2 * time.Second)
 		for range tick.C {
-			status.SetText(fmt.Sprintf("frames: %d  decode errors: %d  (%s)",
-				atomic.LoadUint64(&frames), atomic.LoadUint64(&decodeErr), *url))
+			f := atomic.LoadUint64(&frames)
+			d := atomic.LoadUint64(&decodeErr)
+			u := *url
+			fyne.Do(func() {
+				status.SetText(fmt.Sprintf("frames: %d  decode errors: %d  (%s)", f, d, u))
+			})
 		}
 	}()
 
